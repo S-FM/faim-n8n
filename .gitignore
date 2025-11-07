@@ -1,0 +1,37 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+.DS_Store
+coverage/
+*.log
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.nyc_output/
+
+# IDE
+.history
+*.sublime-workspace
+
+# OS
+Thumbs.db
+
+# Credentials and secrets
+.credentials.json
+credentials.json
+secrets.json
+*.pem
+*.key
+
+# Testing
+test-api-key.txt
+test-credentials.json
+
+# Build outputs
+*.tgz
+*.tar.gz

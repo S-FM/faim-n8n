@@ -1,0 +1,99 @@
+{
+  "name": "FlowState with Custom Parameters",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "1",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [50, 100]
+    },
+    {
+      "parameters": {
+        "jsonData": "{\n  \"timeSeries\": [\n    [100.5, 101.2, 102.1, 103.5, 104.2],\n    [105.1, 106.3, 107.2, 108.1, 109.5],\n    [110.2, 111.1, 112.3, 113.2, 114.1]\n  ]\n}"
+      },
+      "id": "2",
+      "name": "Multivariate Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [200, 100]
+    },
+    {
+      "parameters": {
+        "model": "flowstate",
+        "modelVersion": "1",
+        "inputData": "={{ $json.timeSeries }}",
+        "horizon": 5,
+        "outputType": "point",
+        "flowstateOptions": {
+          "scaleFactor": 1.0,
+          "predictionType": "median"
+        },
+        "authentication": "faimApi"
+      },
+      "id": "3",
+      "name": "FAIM Forecast (FlowState)",
+      "type": "n8n-nodes-faim.faimForecast",
+      "typeVersion": 1,
+      "position": [400, 100],
+      "credentials": {
+        "faimApi": {
+          "id": "faim_key_1",
+          "name": "FAIM API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "### FlowState Forecast Results\n\n**Model Configuration**:\n- Model: {{ $json.metadata.modelName }}\n- Prediction Type: median\n- Scale Factor: 1.0\n\n**Data Shapes**:\n- Input: {{ $json.metadata.inputShape.batch }} batch × {{ $json.metadata.inputShape.sequence }} sequence × {{ $json.metadata.inputShape.features }} features\n- Output: {{ $json.metadata.outputShape.batch }} batch × {{ $json.metadata.outputShape.horizon }} horizon × {{ $json.metadata.outputShape.features }} features\n\n**Forecast**:\n{{ JSON.stringify($json.forecast.point, null, 2) }}\n\n**Cost**: {{ $json.metadata.costAmount }} {{ $json.metadata.costCurrency }} | **Duration**: {{ $json.executionStats.durationMs }}ms"
+      },
+      "id": "4",
+      "name": "Display Results",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1,
+      "position": [600, 100]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Multivariate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Multivariate Data": {
+      "main": [
+        [
+          {
+            "node": "FAIM Forecast (FlowState)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FAIM Forecast (FlowState)": {
+      "main": [
+        [
+          {
+            "node": "Display Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "staticData": null,
+  "createdAt": "2024-11-06T00:00:00.000Z",
+  "id": "flowstate-params",
+  "versionId": "1"
+}

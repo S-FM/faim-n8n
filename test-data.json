@@ -1,0 +1,310 @@
+{
+  "testCases": [
+    {
+      "name": "Simple 1D Array - Chronos2",
+      "description": "Basic univariate forecast",
+      "input": {
+        "timeSeries": [10, 12, 14, 13, 15, 17, 16, 18, 20, 19, 21, 22]
+      },
+      "config": {
+        "model": "chronos2",
+        "modelVersion": "1",
+        "horizon": 7,
+        "outputType": "point"
+      },
+      "inputDataExpression": "{{ $json.timeSeries }}"
+    },
+    {
+      "name": "2D Array - FlowState Multivariate",
+      "description": "Multiple time series (e.g., price + volume)",
+      "input": {
+        "multiSeries": [
+          [100, 200],
+          [101, 202],
+          [102, 204],
+          [103, 206],
+          [104, 208],
+          [105, 210],
+          [106, 212],
+          [107, 214],
+          [108, 216],
+          [109, 218]
+        ]
+      },
+      "config": {
+        "model": "flowstate",
+        "modelVersion": "1",
+        "horizon": 5,
+        "outputType": "point"
+      },
+      "inputDataExpression": "{{ $json.multiSeries }}"
+    },
+    {
+      "name": "2D Array with Quantiles",
+      "description": "Sales forecast with confidence intervals",
+      "input": {
+        "salesData": [
+          [1000, 2500],
+          [1100, 2600],
+          [1050, 2550],
+          [1200, 2700],
+          [1150, 2680],
+          [1250, 2800],
+          [1300, 2850],
+          [1280, 2820]
+        ]
+      },
+      "config": {
+        "model": "chronos2",
+        "modelVersion": "1",
+        "horizon": 4,
+        "outputType": "quantiles"
+      },
+      "inputDataExpression": "{{ $json.salesData }}"
+    },
+    {
+      "name": "3D Array - Batch Processing",
+      "description": "Multiple independent time series in one call",
+      "input": {
+        "batchSeries": [
+          [[10, 20], [11, 21], [12, 22], [13, 23], [14, 24]],
+          [[100, 200], [101, 201], [102, 202], [103, 203], [104, 204]],
+          [[1000, 2000], [1010, 2010], [1020, 2020], [1030, 2030], [1040, 2040]]
+        ]
+      },
+      "config": {
+        "model": "chronos2",
+        "modelVersion": "1",
+        "horizon": 3,
+        "outputType": "point"
+      },
+      "inputDataExpression": "{{ $json.batchSeries }}"
+    },
+    {
+      "name": "Stock Price - Long Horizon",
+      "description": "20-point history, 10-step ahead forecast",
+      "input": {
+        "stockPrice": [
+          150.25, 151.30, 150.80, 152.15, 153.40, 152.90, 154.20, 155.10, 154.75,
+          156.30, 157.20, 156.85, 158.40, 159.10, 158.90, 160.25, 161.30, 160.80,
+          162.50, 163.75
+        ]
+      },
+      "config": {
+        "model": "chronos2",
+        "modelVersion": "1",
+        "horizon": 10,
+        "outputType": "point"
+      },
+      "inputDataExpression": "{{ $json.stockPrice }}"
+    },
+    {
+      "name": "Weather Data - Temperature & Humidity",
+      "description": "Multivariate weather forecast",
+      "input": {
+        "weatherData": [
+          [72.5, 45],
+          [73.0, 46],
+          [72.8, 47],
+          [74.2, 48],
+          [75.5, 47],
+          [76.0, 46],
+          [75.8, 45],
+          [74.5, 44],
+          [73.2, 45],
+          [72.0, 46],
+          [71.5, 47],
+          [70.8, 48],
+          [72.0, 49],
+          [73.5, 48],
+          [75.0, 46]
+        ]
+      },
+      "config": {
+        "model": "flowstate",
+        "modelVersion": "1",
+        "horizon": 7,
+        "outputType": "point"
+      },
+      "inputDataExpression": "{{ $json.weatherData }}"
+    },
+    {
+      "name": "Minimal Data - Edge Case",
+      "description": "Minimum viable input (3 points)",
+      "input": {
+        "minimalData": [1, 2, 3]
+      },
+      "config": {
+        "model": "chronos2",
+        "modelVersion": "1",
+        "horizon": 1,
+        "outputType": "point"
+      },
+      "inputDataExpression": "{{ $json.minimalData }}"
+    },
+    {
+      "name": "Long Horizon - TiRex",
+      "description": "100-step ahead forecast",
+      "input": {
+        "historicalData": [85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96]
+      },
+      "config": {
+        "model": "tirex",
+        "modelVersion": "1",
+        "horizon": 100,
+        "outputType": "point"
+      },
+      "inputDataExpression": "{{ $json.historicalData }}"
+    }
+  ],
+  "errorCases": [
+    {
+      "name": "Empty Array Error",
+      "description": "Should throw ValidationError",
+      "input": {
+        "invalidData": []
+      },
+      "expectedError": "ValidationError: Input data cannot be empty"
+    },
+    {
+      "name": "Non-numeric Values Error",
+      "description": "Should throw ValidationError",
+      "input": {
+        "invalidData": [1, "two", 3, "four"]
+      },
+      "expectedError": "ValidationError: All elements must be numeric values"
+    },
+    {
+      "name": "Null Values Error",
+      "description": "Should throw ValidationError",
+      "input": {
+        "invalidData": [1, null, 3]
+      },
+      "expectedError": "ValidationError: Data contains null or undefined values"
+    },
+    {
+      "name": "Inconsistent 2D Array Error",
+      "description": "Should throw ValidationError",
+      "input": {
+        "invalidData": [[1, 2], [3, 4, 5], [6, 7]]
+      },
+      "expectedError": "ValidationError: All rows must have the same number of columns"
+    },
+    {
+      "name": "Invalid Horizon Error",
+      "description": "Should throw ValidationError",
+      "config": {
+        "horizon": 1001
+      },
+      "expectedError": "ValidationError: horizon must be between 1 and 1000"
+    },
+    {
+      "name": "Invalid Model Error",
+      "description": "Should throw ValidationError",
+      "config": {
+        "model": "invalid_model"
+      },
+      "expectedError": "ValidationError: Invalid model type"
+    }
+  ],
+  "sampleOutputs": {
+    "pointForecast": {
+      "forecast": {
+        "point": [
+          [[23], [24], [25], [26], [27], [28], [29]]
+        ]
+      },
+      "metadata": {
+        "modelName": "chronos2",
+        "modelVersion": "1",
+        "inputShape": {
+          "batch": 1,
+          "sequence": 12,
+          "features": 1
+        },
+        "outputShape": {
+          "batch": 1,
+          "horizon": 7,
+          "features": 1
+        }
+      },
+      "executionStats": {
+        "durationMs": 1234,
+        "retryCount": 0,
+        "batchSize": 1
+      }
+    },
+    "multivariateForecast": {
+      "forecast": {
+        "point": [
+          [
+            [110, 220],
+            [111, 222],
+            [112, 224],
+            [113, 226],
+            [114, 228]
+          ]
+        ]
+      },
+      "metadata": {
+        "modelName": "flowstate",
+        "modelVersion": "1",
+        "inputShape": {
+          "batch": 1,
+          "sequence": 10,
+          "features": 2
+        },
+        "outputShape": {
+          "batch": 1,
+          "horizon": 5,
+          "features": 2
+        }
+      },
+      "executionStats": {
+        "durationMs": 1500,
+        "retryCount": 0,
+        "batchSize": 1
+      }
+    },
+    "batchForecast": {
+      "forecast": {
+        "point": [
+          [
+            [15, 25],
+            [16, 26],
+            [17, 27]
+          ],
+          [
+            [105, 205],
+            [106, 206],
+            [107, 207]
+          ],
+          [
+            [1050, 2050],
+            [1060, 2060],
+            [1070, 2070]
+          ]
+        ]
+      },
+      "metadata": {
+        "modelName": "chronos2",
+        "modelVersion": "1",
+        "inputShape": {
+          "batch": 3,
+          "sequence": 5,
+          "features": 2
+        },
+        "outputShape": {
+          "batch": 3,
+          "horizon": 3,
+          "features": 2
+        }
+      },
+      "executionStats": {
+        "durationMs": 2500,
+        "retryCount": 0,
+        "batchSize": 3
+      }
+    }
+  }
+}

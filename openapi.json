@@ -1,0 +1,956 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Triton Proxy Server",
+    "description": "\n        REST API proxy for NVIDIA Triton Inference Server.\n\n        Translates HTTP/Arrow requests to Triton gRPC calls for time series forecasting models.\n\n        ## Features\n        - Apache Arrow IPC format for efficient data transfer\n        - Automatic retry logic for transient errors\n        - Request validation and error handling\n        - Health monitoring endpoint\n\n        ## Getting Started\n        1. Ensure Triton server is running with your models loaded\n        2. Send Arrow-formatted requests to v1/ts/forecast/{model_name}/{model_version}`\n        3. Monitor server health at `/health`\n\n        ## Available Models\n        - **flowstate**: IBM Granite FlowState - State-space model for flexible-length time series\n        - **chronos2**: Amazon Chronos 2.0 - Large language model for forecasting\n        - **tirex**: TiRex - Transformer-based time series forecasting\n        ",
+    "contact": {
+      "name": "Triton Proxy Server"
+    },
+    "license": {
+      "name": "Apache 2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
+    },
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/v1/session/init": {
+      "post": {
+        "tags": [
+          "user"
+        ],
+        "summary": "Initialize user session with Firebase ID token",
+        "description": "Initialize a user session using a Firebase ID token and create/update their account and billing account.\n\n    **Authentication**: Requires valid Firebase ID token in Authorization header as `Bearer <token>`\n\n    **Process**:\n    1. Validates the token signature using Firebase Admin SDK\n    2. Verifies the token is issued by the configured Firebase project\n    3. Extracts user information from the token payload\n    4. Creates a new user account or updates existing user with latest information\n    5. Creates a billing account for the user if one doesn't exist\n\n    **Token Requirements**:\n    - Must be signed by Firebase\n    - Must be issued by the configured Firebase project\n    - Must contain `uid` in the payload\n    - Must contain `name` for user profile information\n    - Must contain `email` for user profile information",
+        "operationId": "init_user_session_v1_session_init_post",
+        "responses": {
+          "200": {
+            "description": "User session initialized successfully",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "user_id": "550e8400-e29b-41d4-a716-446655440000",
+                  "name": "John Doe",
+                  "email": "john@example.com"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid token payload - missing required fields",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Invalid token payload"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Authentication failed"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Internal server error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ts/forecast/{model_name}/{model_version}": {
+      "post": {
+        "tags": [
+          "forecast"
+        ],
+        "summary": "Generate time series forecast",
+        "description": "Generate time series forecasts using the specified Triton model.\n\n    ## Authentication\n    Requires valid API key in Authorization header as `Bearer <api_key>`\n    - API keys can be created via `/v1/user/api-keys/create` endpoint\n    - Keys must follow the format: `sk-<public_id>-<secret>`\n    - Invalid or expired keys return 401 INVALID_API_KEY\n\n    ## Request Format\n    Apache Arrow IPC Stream (`application/vnd.apache.arrow.stream`)\n    - Large arrays (x, padding_mask, etc.) sent as Arrow columns\n    - Small parameters (horizon, quantiles, etc.) sent in schema metadata\n    - Request timeout: 20 seconds (configurable on server)\n    - Maximum request size: 100MB (configurable on server)\n\n    ## Required Inputs\n    - `x`: Time series data (numpy array, 1D or 2D)\n    - `horizon`: Forecast horizon length (integer, positive, in metadata)\n    - `output_type`: Output type (string, in metadata)\n      - Valid values: `\"point\"`, `\"quantiles\"`, `\"samples\"`\n      - Determines output format in response\n\n    ## Model-Specific Inputs\n\n    ### FlowState Model\n    - `scale_factor` (float, optional): Scaling factor for input time series (default: None)\n    - `prediction_type` (string, optional): Type of prediction (default: None)\n\n    ### Chronos2 Model\n    - `quantiles` (float array, optional): Quantile levels for quantiles output (list of floats, 0.0-1.0)\n\n    ### TiRex Model\n\n    ## Response Format\n    Successful responses return Apache Arrow IPC stream with:\n\n    ### Common Response Metadata (All Models)\n    - `model_name` (string): Name of model used\n    - `model_version` (string): Version of model used\n    - `transaction_id` (string): Unique identifier for billing tracking\n    - `cost_amount` (string): Amount charged for this inference (in currency units)\n    - `cost_currency` (string): Currency code (e.g., \"USD\")\n\n    ### Response Output Arrays by Model & output_type\n\n    **FlowState:**\n    - `output_type=\"point\"`: Single point forecast array (shape: batch x horizon)\n    - `output_type=\"quantiles\"`: Quantile forecasts array (shape: batch x horizon x num_quantiles)\n\n    **Chronos2:**\n    - `output_type=\"point\"`: Point forecast array (shape: batch x horizon)\n    - `output_type=\"quantiles\"`: Quantile predictions array (shape: batch x horizon x num_quantiles)\n\n    **TiRex:**\n    - `output_type=\"point\"`: Point forecast array (shape: batch x horizon)\n    - `output_type=\"quantiles\"`: Quantile predictions array (shape: batch x horizon x num_quantiles)\n\n    ## Error Handling\n    All errors return `ErrorResponse` (HTTP JSON) with:\n    - `error_code`: Machine-readable code for programmatic handling (see ErrorCode enum)\n    - `message`: Human-readable error message\n    - `detail`: Optional detailed explanation\n    - `request_id`: Request identifier for debugging\n\n    ### Error Categories\n\n    **Authentication & Authorization (401, 403)**\n    - AUTHENTICATION_REQUIRED: Missing or malformed Authorization header\n    - AUTHENTICATION_FAILED: Bearer format invalid\n    - INVALID_API_KEY: API key not found, expired, or revoked\n    - AUTHORIZATION_FAILED: Valid credentials but insufficient permissions\n\n    **Validation Errors (422)**\n    - MISSING_REQUIRED_FIELD: Required input missing (x, horizon, output_type)\n    - INVALID_PARAMETER: Parameter out of valid range or invalid type\n    - INVALID_SHAPE: Input tensor shape incompatible with model\n    - INVALID_DTYPE: Input data type incorrect for model\n    - INVALID_VALUE_RANGE: Input values outside acceptable range\n    - VALIDATION_ERROR: Invalid Arrow format or other validation failure\n\n    **Resource Errors (404, 402)**\n    - MODEL_NOT_FOUND: Model or version doesn't exist\n    - PRICING_NOT_FOUND: Pricing configuration missing for model/version\n    - INSUFFICIENT_FUNDS: User billing account balance insufficient\n    - REQUEST_TOO_LARGE: Request payload exceeds 100MB limit\n\n    **Inference Errors (500, 503, 504)**\n    - INFERENCE_ERROR: Model inference failed (check detail for reason)\n    - TIMEOUT_ERROR: Inference exceeded 20 second deadline\n    - OUT_OF_MEMORY: GPU/CPU memory exhausted during inference\n    - RESOURCE_EXHAUSTED: Compute resources temporarily unavailable\n    - MODEL_INITIALIZATION_ERROR: Model failed to load or initialize\n\n    **System Errors (500, 503)**\n    - TRITON_CONNECTION_ERROR: Cannot connect to Triton server\n    - DATABASE_ERROR: Database operation failed\n    - INTERNAL_SERVER_ERROR: Unexpected server error\n    - BILLING_TRANSACTION_FAILED: Billing system error (insufficient funds, etc.)\n\n    ### Retry Strategy\n    **Retryable Errors** (transient, safe to retry with exponential backoff):\n    - TIMEOUT_ERROR (504): Retry after 2-5 seconds\n    - OUT_OF_MEMORY (503): Retry after 5-10 seconds or reduce batch size\n    - RESOURCE_EXHAUSTED (503): Retry after 5-10 seconds\n    - TRITON_CONNECTION_ERROR (503): Retry after 5-10 seconds\n    - DATABASE_ERROR (500): Retry after 2-5 seconds\n\n    **Non-Retryable Errors** (permanent failures, don't retry):\n    - All 401/403 auth errors: Fix credentials and resubmit\n    - All 404 errors: Resource doesn't exist, fix request\n    - All 422 validation errors: Fix input data and resubmit\n    - INSUFFICIENT_FUNDS (402): Add credit to account\n    - REQUEST_TOO_LARGE (413): Reduce payload size\n    - INFERENCE_ERROR (500): Check error detail, may require model update",
+        "operationId": "forecast_v1_ts_forecast__model_name___model_version__post",
+        "parameters": [
+          {
+            "name": "model_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ModelName"
+            }
+          },
+          {
+            "name": "model_version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Model Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful inference. Returns Arrow IPC stream with prediction arrays (point, quantiles, samples) and metadata.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary",
+                  "description": "Apache Arrow IPC stream with prediction arrays and metadata"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid API key",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_header": {
+                    "summary": "Missing Authorization header",
+                    "value": {
+                      "error_code": "AUTHENTICATION_REQUIRED",
+                      "message": "Missing Authorization header",
+                      "detail": "Authorization header is required (format: 'Bearer <api_key>')."
+                    }
+                  },
+                  "invalid_format": {
+                    "summary": "Invalid Bearer format",
+                    "value": {
+                      "error_code": "AUTHENTICATION_FAILED",
+                      "message": "Invalid authentication format. Expected 'Bearer <api_key>'",
+                      "detail": "Authorization header must follow 'Bearer <api_key>' format."
+                    }
+                  },
+                  "invalid_key": {
+                    "summary": "API key not found or inactive",
+                    "value": {
+                      "error_code": "INVALID_API_KEY",
+                      "message": "API key not found or inactive"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Insufficient funds or billing error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "insufficient_funds": {
+                    "summary": "Insufficient account balance",
+                    "value": {
+                      "error_code": "INSUFFICIENT_FUNDS",
+                      "message": "User account balance insufficient for inference cost",
+                      "detail": "Required: 10.50 USD, Available: 5.00 USD"
+                    }
+                  },
+                  "billing_failed": {
+                    "summary": "Billing transaction failed",
+                    "value": {
+                      "error_code": "BILLING_TRANSACTION_FAILED",
+                      "message": "Unable to create billing transaction",
+                      "detail": "Billing system returned error during transaction commit"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Model not found or pricing not configured",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pricing_not_found": {
+                    "summary": "Pricing configuration missing",
+                    "value": {
+                      "error_code": "PRICING_NOT_FOUND",
+                      "message": "Model 'flowstate' version '1' pricing not available",
+                      "detail": "Pricing must be configured for model 'flowstate' version '1'."
+                    }
+                  },
+                  "model_not_found": {
+                    "summary": "Model does not exist",
+                    "value": {
+                      "error_code": "MODEL_NOT_FOUND",
+                      "message": "Model 'unknown_model' not found",
+                      "detail": "Available models: flowstate, toto"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body too large (exceeds configured maximum)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error_code": "REQUEST_TOO_LARGE",
+                  "message": "Request body too large",
+                  "detail": "Maximum size: 100MB"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request data (validation error)",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_field": {
+                    "summary": "Missing required field",
+                    "value": {
+                      "error_code": "MISSING_REQUIRED_FIELD",
+                      "message": "Parameter 'horizon' is required in metadata",
+                      "detail": "Parameter 'horizon' is required in metadata"
+                    }
+                  },
+                  "invalid_parameter": {
+                    "summary": "Invalid parameter value",
+                    "value": {
+                      "error_code": "INVALID_PARAMETER",
+                      "message": "Invalid output_type 'invalid'. Must be one of: {'point', 'quantiles', 'samples'}",
+                      "detail": "Invalid output_type 'invalid'. Must be one of: {'point', 'quantiles', 'samples'}"
+                    }
+                  },
+                  "invalid_shape": {
+                    "summary": "Input shape mismatch",
+                    "value": {
+                      "error_code": "INVALID_SHAPE",
+                      "message": "Input 'x' shape incompatible with model",
+                      "detail": "Expected shape (batch_size, sequence_length), got (100, 50, 10)"
+                    }
+                  },
+                  "invalid_dtype": {
+                    "summary": "Data type mismatch",
+                    "value": {
+                      "error_code": "INVALID_DTYPE",
+                      "message": "Input 'x' has invalid data type",
+                      "detail": "Expected float32, got int64"
+                    }
+                  },
+                  "value_range_error": {
+                    "summary": "Value outside acceptable range",
+                    "value": {
+                      "error_code": "INVALID_VALUE_RANGE",
+                      "message": "Parameter 'horizon' outside valid range",
+                      "detail": "horizon must be between 1 and 1000, got 2000"
+                    }
+                  },
+                  "validation_from_triton": {
+                    "summary": "Validation error from Triton model",
+                    "value": {
+                      "error_code": "VALIDATION_ERROR",
+                      "message": "Field 'horizon' must be positive",
+                      "detail": "Field 'horizon' must be positive"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Inference error or internal server error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "inference_error": {
+                    "summary": "Model inference failed",
+                    "value": {
+                      "error_code": "INFERENCE_ERROR",
+                      "message": "Model inference failed",
+                      "detail": "Invalid input shape received by model backend"
+                    }
+                  },
+                  "timeout_error": {
+                    "summary": "Inference timeout",
+                    "value": {
+                      "error_code": "TIMEOUT_ERROR",
+                      "message": "Inference request exceeded 20 second timeout",
+                      "detail": "Try reducing batch size or number of time-series"
+                    }
+                  },
+                  "out_of_memory": {
+                    "summary": "GPU out of memory",
+                    "value": {
+                      "error_code": "OUT_OF_MEMORY",
+                      "message": "GPU out of memory during inference",
+                      "detail": "GPU out of memory during inference. Try reducing batch size or number of time-series."
+                    }
+                  },
+                  "model_init_error": {
+                    "summary": "Model initialization failed",
+                    "value": {
+                      "error_code": "MODEL_INITIALIZATION_ERROR",
+                      "message": "Failed to load model",
+                      "detail": "Model weights file not found or corrupted"
+                    }
+                  },
+                  "internal_error": {
+                    "summary": "Unexpected server error",
+                    "value": {
+                      "error_code": "INTERNAL_SERVER_ERROR",
+                      "message": "An unexpected error occurred",
+                      "detail": "Check server logs for details"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable (resource exhausted or Triton connection error)",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "triton_connection": {
+                    "summary": "Cannot connect to Triton server",
+                    "value": {
+                      "error_code": "TRITON_CONNECTION_ERROR",
+                      "message": "Failed to connect to Triton server",
+                      "detail": "Triton server is unavailable. Retry after 5-10 seconds."
+                    }
+                  },
+                  "resource_exhausted": {
+                    "summary": "Compute resources unavailable",
+                    "value": {
+                      "error_code": "RESOURCE_EXHAUSTED",
+                      "message": "Server resources exhausted",
+                      "detail": "All compute resources are currently in use. Retry after 5-10 seconds."
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Gateway timeout (inference exceeded deadline)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error_code": "TIMEOUT_ERROR",
+                  "message": "Inference request exceeded 20 second timeout",
+                  "detail": "Try reducing batch size or increasing server timeout configuration"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "description": "Apache Arrow IPC stream containing input arrays and metadata"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Health check",
+        "description": "Check server status and Triton Inference Server connection",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Server is healthy and connected to Triton",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "status": "healthy",
+                  "triton": "connected"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/user/api-keys/create": {
+      "post": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "Create a new API key",
+        "description": "Create a new API key for the authenticated user.\n\n    **Authentication**: Requires valid API key in Authorization header as `Bearer <api_key>`\n\n    **Process**:\n    1. Validates the user is authenticated\n    2. Creates a new API key with the specified name and optional expiration\n    3. Returns the full API key (only shown once)\n\n    **Note**: The full API key is only returned once during creation. Store it securely.",
+        "operationId": "create_api_key_v1_user_api_keys_create_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAPIKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateAPIKeyResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "API key created successfully",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": "550e8400-e29b-41d4-a716-446655440000",
+                  "key": "sk-550e8400e29b41d4a716446655440000-abcdef1234567890",
+                  "name": "My API Key",
+                  "expires_at": "2024-12-31T23:59:59Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Invalid request data"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Authentication required"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Internal server error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/user/api-keys/get": {
+      "get": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "Get all API keys for the authenticated user",
+        "description": "Retrieve all API keys for the authenticated user, including expired and inactive keys.\n\n    **Authentication**: Requires valid API key in Authorization header as `Bearer <api_key>`\n\n    **Returns**:\n    - List of all API keys owned by the authenticated user\n    - Includes keys with any status (ACTIVE, INACTIVE, REVOKED)\n    - Includes expired keys\n    - Does not return the actual API key values (for security)\n    - Returns key metadata: ID, name, status, expiration date, creation/update times\n\n    **Note**: The actual API key values are never returned for security reasons.\n    Only the public ID and metadata are included in the response.",
+        "operationId": "get_all_api_keys_v1_user_api_keys_get_get",
+        "responses": {
+          "200": {
+            "description": "API keys retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetAllAPIKeysResponse"
+                },
+                "example": {
+                  "api_keys": [
+                    {
+                      "id": "550e8400-e29b-41d4-a716-446655440000",
+                      "name": "My API Key",
+                      "status": "ACTIVE",
+                      "expires_at": "2024-12-31T23:59:59Z",
+                      "time_created": "2024-01-01T10:00:00Z"
+                    },
+                    {
+                      "id": "550e8400-e29b-41d4-a716-446655440001",
+                      "name": "Old API Key",
+                      "status": "REVOKED",
+                      "time_created": "2023-12-01T10:00:00Z"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Authentication required"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Internal server error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/user/api-keys/revoke": {
+      "post": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "Revoke an API key",
+        "description": "Revoke an existing API key for the authenticated user.\n\n    **Authentication**: Requires valid API key in Authorization header as `Bearer <api_key>`\n\n    **Process**:\n    1. Validates the user is authenticated\n    2. Parses and validates the id\n    3. Updates the API key status to REVOKED\n    4. If the key is already revoked, does nothing (no error)\n\n    **Note**: Once revoked, an API key cannot be used for authentication and cannot be reactivated.",
+        "operationId": "revoke_api_key_v1_user_api_keys_revoke_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeAPIKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "API key revoked successfully or already revoked",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "message": "API key revoked successfully",
+                  "id": "550e8400-e29b-41d4-a716-446655440000"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data or id format",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Invalid id format"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Authentication required"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "API key not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "API key not found"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Internal server error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "APIKeyInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "The API key ID (public part)"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "The name of the API key"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "The status of the API key (ACTIVE, INACTIVE, REVOKED)"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At",
+            "description": "The expiration date of the API key"
+          },
+          "time_created": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Time Created",
+            "description": "When the API key was created"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status",
+          "time_created"
+        ],
+        "title": "APIKeyInfo",
+        "description": "Information about an API key (without the actual key value)."
+      },
+      "CreateAPIKeyRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "description": "Human-readable name for the API key"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At",
+            "description": "Optional expiration date for the API key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "CreateAPIKeyRequest",
+        "description": "Request model for creating a new API key."
+      },
+      "CreateAPIKeyResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "The API key ID"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key",
+            "description": "The full API key (only shown once)"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "The name of the API key"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At",
+            "description": "The expiration date of the API key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "name"
+        ],
+        "title": "CreateAPIKeyResponse",
+        "description": "Response model for API key creation."
+      },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "VALIDATION_ERROR",
+          "INVALID_MODEL_INPUT",
+          "INVALID_PARAMETER",
+          "MISSING_REQUIRED_FIELD",
+          "INVALID_SHAPE",
+          "INVALID_DTYPE",
+          "INVALID_VALUE_RANGE",
+          "AUTHENTICATION_REQUIRED",
+          "AUTHENTICATION_FAILED",
+          "INVALID_API_KEY",
+          "AUTHORIZATION_FAILED",
+          "MODEL_NOT_FOUND",
+          "PRICING_NOT_FOUND",
+          "RESOURCE_NOT_FOUND",
+          "INSUFFICIENT_FUNDS",
+          "INFERENCE_ERROR",
+          "MODEL_INITIALIZATION_ERROR",
+          "TIMEOUT_ERROR",
+          "OUT_OF_MEMORY",
+          "RESOURCE_EXHAUSTED",
+          "INTERNAL_SERVER_ERROR",
+          "TRITON_CONNECTION_ERROR",
+          "DATABASE_ERROR",
+          "CONFIGURATION_ERROR",
+          "BILLING_TRANSACTION_FAILED",
+          "REQUEST_TOO_LARGE",
+          "RATE_LIMIT_EXCEEDED"
+        ],
+        "title": "ErrorCode",
+        "description": "Canonical error codes used across the entire system.\n\nThese codes are stable identifiers that clients can use for\nprogrammatic error handling (retries, fallbacks, user messaging)."
+      },
+      "ErrorResponse": {
+        "properties": {
+          "error_code": {
+            "$ref": "#/components/schemas/ErrorCode",
+            "description": "Machine-readable error code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable error message"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail",
+            "description": "Detailed error explanation (backward compatible with SDK ErrorResponse.detail)"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id",
+            "description": "Request identifier for distributed tracing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error_code",
+          "message"
+        ],
+        "title": "ErrorResponse",
+        "description": "Canonical error response structure for the entire FAIM system.\n\nThis model is used by:\n1. Triton Python backends (serialized to JSON string in error metadata)\n2. Proxy Server (returned as HTTP JSON response body)\n3. Client SDK (deserialized from HTTP response)\n\nAttributes:\n    error_code: Machine-readable error code for programmatic handling\n    message: Human-readable error message\n    detail: Optional detailed explanation (backward compatible with SDK)\n    request_id: Request identifier for tracing",
+        "examples": [
+          {
+            "detail": "Field 'horizon' must be a positive integer",
+            "error_code": "VALIDATION_ERROR",
+            "message": "Input validation failed",
+            "request_id": "req_12345"
+          },
+          {
+            "detail": "GPU out of memory during inference. Try reducing batch size.",
+            "error_code": "INFERENCE_ERROR",
+            "message": "Model inference failed",
+            "request_id": "req_67890"
+          }
+        ]
+      },
+      "GetAllAPIKeysResponse": {
+        "properties": {
+          "api_keys": {
+            "items": {
+              "$ref": "#/components/schemas/APIKeyInfo"
+            },
+            "type": "array",
+            "title": "Api Keys",
+            "description": "List of all API keys for the user"
+          }
+        },
+        "type": "object",
+        "required": [
+          "api_keys"
+        ],
+        "title": "GetAllAPIKeysResponse",
+        "description": "Response model for getting all API keys."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ModelName": {
+        "type": "string",
+        "enum": [
+          "flowstate",
+          "chronos2",
+          "tirex"
+        ],
+        "title": "ModelName",
+        "description": "Available model names for inference."
+      },
+      "RevokeAPIKeyRequest": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "The API key ID to revoke"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "RevokeAPIKeyRequest",
+        "description": "Request model for revoking an API key."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "forecast",
+      "description": "Time series forecasting operations using Triton models"
+    },
+    {
+      "name": "user",
+      "description": "User authentication and session management"
+    },
+    {
+      "name": "health",
+      "description": "Server health and monitoring"
+    }
+  ]
+}

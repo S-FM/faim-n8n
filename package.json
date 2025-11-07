@@ -1,0 +1,60 @@
+{
+  "name": "@faim-group/n8n-nodes-faim",
+  "version": "1.0.0",
+  "description": "n8n node for FAIM time-series forecast API",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "n8n": {
+    "nodes": [
+      "dist/nodes/FAIMForecast/FAIMForecast.node.js"
+    ],
+    "credentials": [
+      "dist/nodes/FAIMForecast/FAIMForecast.credentials.js"
+    ]
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix"
+  },
+  "keywords": [
+    "n8n",
+    "faim",
+    "forecast",
+    "time-series",
+    "ml",
+    "chronos",
+    "flowstate",
+    "tirex"
+  ],
+  "author": "FAIM Team",
+  "license": "MIT",
+  "packageManager": "pnpm@10.20.0",
+  "peerDependencies": {
+    "n8n-core": "^1.0.0",
+    "n8n-workflow": "^1.0.0"
+  },
+  "dependencies": {
+    "apache-arrow": "^14.0.0",
+    "axios": "^1.6.0",
+    "pako": "^2.1.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "@types/pako": "^2.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "jest": "^29.5.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.0.0"
+  }
+}
