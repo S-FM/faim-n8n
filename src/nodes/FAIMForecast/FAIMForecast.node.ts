@@ -18,7 +18,9 @@ export class FAIMForecast implements INodeType {
     name: 'faimForecast',
     group: ['transform'],
     version: 1,
-    description: 'Generate time-series forecasts using FAIM ML models',
+    description: 'Generate time-series forecasts using FAIM ML models (Chronos 2.0, FlowState, TiRex). Requires an API key from https://faim.it.com',
+    documentationUrl: 'https://faim.it.com/api-docs',
+    icon: 'file:faim.png',
     defaults: {
       name: 'FAIM Time-Series Forecasting',
       color: '#007AFF',
@@ -69,8 +71,32 @@ export class FAIMForecast implements INodeType {
         options: [
           { name: 'Point', value: 'point' },
           { name: 'Quantiles', value: 'quantiles' },
-          { name: 'Samples', value: 'samples' },
         ],
+      },
+      {
+        displayName: 'Quantiles',
+        name: 'quantiles',
+        type: 'string',
+        default: '[0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9]',
+        description: 'Quantiles to forecast (JSON array format). Only for Chronos 2.0. FlowState and TiRex use fixed default quantiles. Example: [0.1,0.5,0.9]',
+        displayOptions: {
+          show: {
+            outputType: ['quantiles'],
+            model: ['chronos2'],
+          },
+        },
+      },
+      {
+        displayName: 'Note: FlowState & TiRex Quantiles',
+        name: 'quantilesNote',
+        type: 'notice',
+        default: '',
+        displayOptions: {
+          show: {
+            outputType: ['quantiles'],
+            model: ['flowstate', 'tirex'],
+          },
+        },
       },
     ],
   };
@@ -115,6 +141,23 @@ export class FAIMForecast implements INodeType {
           }
         }
 
+        // Build parameters
+        const parameters: Record<string, unknown> = {};
+
+        // Add quantiles parameter if output type is quantiles and model is chronos2
+        if (outputType === 'quantiles' && model === 'chronos2') {
+          const quantilesStr = this.getNodeParameter('quantiles', i) as string;
+          try {
+            parameters.quantiles = JSON.parse(quantilesStr);
+          } catch {
+            throw new NodeOperationError(
+              this.getNode(),
+              'Quantiles must be a valid JSON array. Example: [0.1,0.5,0.9]',
+              { itemIndex: i },
+            );
+          }
+        }
+
         // Execute forecast
         const response = await client.forecast(
           model,
@@ -122,7 +165,7 @@ export class FAIMForecast implements INodeType {
           inputData,
           horizon,
           outputType,
-          {},
+          parameters,
         );
 
         // Add result

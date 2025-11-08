@@ -5,7 +5,7 @@ import { ICredentialType } from 'n8n-workflow';
 export class FAIMForecast implements ICredentialType {
   name = 'faimApi';
   displayName = 'FAIM API Key';
-  documentationUrl = 'https://faim.ai/docs/api-keys';
+  documentationUrl = 'https://faim.it.com/api-docs';
   properties = [
     {
       displayName: 'API Key',
@@ -17,7 +17,7 @@ export class FAIMForecast implements ICredentialType {
       default: '',
       required: true,
       placeholder: 'sk-xxxxxxxxxxxxxxxxxx',
-      description: 'API key for FAIM forecast service (format: sk-...)',
+      description: 'API key for FAIM forecast service. Get one at https://faim.it.com',
     },
   ];
 }
