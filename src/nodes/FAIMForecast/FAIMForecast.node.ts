@@ -18,7 +18,7 @@ export class FAIMForecast implements INodeType {
     name: 'faimForecast',
     group: ['transform'],
     version: 1,
-    description: 'Generate time-series forecasts using FAIM ML models (Chronos 2.0, FlowState, TiRex). Requires an API key from https://faim.it.com',
+    description: 'Generate time-series forecasts using FAIM ML models (Chronos 2.0, FlowState, TiRex). Visit https://faim.it.com/ to learn more.',
     documentationUrl: 'https://faim.it.com/api-docs',
     icon: 'file:faim.png',
     defaults: {
@@ -78,23 +78,14 @@ export class FAIMForecast implements INodeType {
         name: 'quantiles',
         type: 'string',
         default: '[0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9]',
-        description: 'Quantiles to forecast (JSON array format). Only for Chronos 2.0. FlowState and TiRex use fixed default quantiles. Example: [0.1,0.5,0.9]',
+        typeOptions: {
+          rows: 2,
+        },
+        description: 'Quantiles to forecast (JSON array format). Example: [0.1,0.5,0.9]',
         displayOptions: {
           show: {
             outputType: ['quantiles'],
             model: ['chronos2'],
-          },
-        },
-      },
-      {
-        displayName: 'Note: FlowState & TiRex Quantiles',
-        name: 'quantilesNote',
-        type: 'notice',
-        default: '',
-        displayOptions: {
-          show: {
-            outputType: ['quantiles'],
-            model: ['flowstate', 'tirex'],
           },
         },
       },

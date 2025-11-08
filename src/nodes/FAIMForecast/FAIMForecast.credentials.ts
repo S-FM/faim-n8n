@@ -16,7 +16,7 @@ export class FAIMForecast implements ICredentialType {
       },
       default: '',
       required: true,
-      placeholder: 'sk-xxxxxxxxxxxxxxxxxx',
+      placeholder: 'api_key_1_xxxxxxxxxxxxxxxxxxxxx',
       description: 'API key for FAIM forecast service. Get one at https://faim.it.com',
     },
   ];
