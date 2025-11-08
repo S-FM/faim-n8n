@@ -14,13 +14,13 @@ import { ModelType, OutputType } from '../../api/requestBuilder';
 
 export class FAIMForecast implements INodeType {
   description: INodeTypeDescription = {
-    displayName: 'FAIM Forecast',
+    displayName: 'FAIM Time-Series Forecasting',
     name: 'faimForecast',
     group: ['transform'],
     version: 1,
     description: 'Generate time-series forecasts using FAIM ML models',
     defaults: {
-      name: 'FAIM Forecast',
+      name: 'FAIM Time-Series Forecasting',
       color: '#007AFF',
     },
     inputs: ['main'],
@@ -43,13 +43,6 @@ export class FAIMForecast implements INodeType {
           { name: 'FlowState', value: 'flowstate' },
           { name: 'TiRex', value: 'tirex' },
         ],
-      },
-      {
-        displayName: 'Model Version',
-        name: 'modelVersion',
-        type: 'string',
-        default: '1',
-        description: 'Version of the model to use',
       },
       {
         displayName: 'Input Data',
@@ -94,7 +87,7 @@ export class FAIMForecast implements INodeType {
 
     // Get node parameters
     const model = this.getNodeParameter('model', 0) as ModelType;
-    const modelVersion = this.getNodeParameter('modelVersion', 0) as string;
+    const modelVersion = '1'; // Always use version 1
     const horizon = this.getNodeParameter('horizon', 0) as number;
     const outputType = this.getNodeParameter('outputType', 0) as OutputType;
 
