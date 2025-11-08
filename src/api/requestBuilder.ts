@@ -67,6 +67,7 @@ export class RequestBuilder {
     const metadata: Record<string, unknown> = {
       horizon: req.horizon,
       output_type: req.outputType,
+      compression: null, // Request uncompressed response from backend
     };
 
     // Add model-specific parameters
