@@ -35,3 +35,4 @@ test-credentials.json
 # Build outputs
 *.tgz
 *.tar.gz
+openapi.json

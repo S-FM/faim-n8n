@@ -49,6 +49,26 @@
       "type": "n8n-nodes-base.html",
       "typeVersion": 1,
       "position": [600, 100]
+    },
+    {
+      "parameters": {
+        "jsonData": "{\n  \"forecast\": {\n    \"point\": [[31, 32, 34, 35, 37, 39, 40, 42, 44, 45]]\n  },\n  \"metadata\": {\n    \"modelName\": \"Chronos2\",\n    \"modelVersion\": \"1\",\n    \"inputShape\": {\n      \"batch\": 1,\n      \"sequence\": 20,\n      \"features\": 1\n    },\n    \"outputShape\": {\n      \"batch\": 1,\n      \"horizon\": 10,\n      \"features\": 1\n    },\n    \"costAmount\": \"0.001\",\n    \"costCurrency\": \"USD\"\n  },\n  \"executionStats\": {\n    \"durationMs\": 234,\n    \"retryCount\": 0,\n    \"batchSize\": 1\n  }\n}\n"
+      },
+      "id": "5",
+      "name": "Mock Forecast Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [600, 200]
+    },
+    {
+      "parameters": {
+        "content": "### How to Use This Workflow\n\n1. **Add FAIM API Credentials**: Set up your FAIM API key in n8n credentials\n2. **Use Real Data**: The workflow will call the actual FAIM backend\n3. **View Results**: See the forecast in the Display Results node\n\n### Mock Results\nThis workflow also includes **Mock Forecast Data** node that shows sample output when you don't have API credentials. It demonstrates the expected forecast format.\n\n**Input Data**: Last 20 values of an uptrend series [10, 12, 11, ..., 28, 30]\n**Forecast**: Next 10 values predicted to continue upward trend [31, 32, 34, 35, 37, 39, 40, 42, 44, 45]"
+      },
+      "id": "6",
+      "name": "Documentation",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1,
+      "position": [800, 100]
     }
   ],
   "connections": {
@@ -70,6 +90,11 @@
             "node": "FAIM Forecast",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Mock Forecast Data",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -79,6 +104,28 @@
         [
           {
             "node": "Display Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mock Forecast Data": {
+      "main": [
+        [
+          {
+            "node": "Display Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Display Results": {
+      "main": [
+        [
+          {
+            "node": "Documentation",
             "type": "main",
             "index": 0
           }
