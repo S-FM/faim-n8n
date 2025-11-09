@@ -26,13 +26,13 @@
   },
   "keywords": [
     "n8n",
+    "n8n-community-node-package",
     "faim",
     "forecast",
     "time-series",
     "ml",
-    "chronos",
-    "flowstate",
-    "tirex"
+    "chronos2",
+    "time-series-forecasting"
   ],
   "author": "FAIM Team",
   "license": "MIT",
