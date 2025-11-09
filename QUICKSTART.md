@@ -4,7 +4,7 @@ Get your first FAIM forecast in 5 minutes.
 
 ## 1. Get API Key
 
-Sign up at [faim.ai](https://faim.ai) and get your API key (format: `sk-...`)
+Sign up at [faim.it.com](https://faim.it.com) and get your API key (format: `sk-...`)
 
 ## 2. Install Package
 
@@ -108,15 +108,19 @@ Use for: Multiple time series at once (batch processing)
 
 ---
 
-## Model Cheat Sheet
+## Model Information
 
-| Model | Best For | Cost | Speed | Accuracy |
-|-------|----------|------|-------|----------|
-| **Chronos2** | General purpose, quantiles | Higher | Slow | Excellent |
-| **FlowState** | Balanced, flexible | Medium | Medium | Good |
-| **TiRex** | Speed, simple patterns | Lower | Fast | Good |
+### Currently Supported Model
 
-**Quick pick**: Use **Chronos2** unless you need speed (TiRex) or flexibility (FlowState)
+| Model | Best For | Accuracy |
+|-------|----------|----------|
+| **Chronos2** | All use cases - point, quantile & sample forecasts | Excellent |
+
+Chronos 2.0 is a state-of-the-art large language model for time-series forecasting. It provides:
+- ✅ High-quality point forecasts
+- ✅ Quantile forecasts for confidence intervals (e.g., 10th/90th percentiles)
+- ✅ Samples for uncertainty quantification
+- ✅ Consistent accuracy across different time-series types
 
 ---
 
@@ -148,7 +152,7 @@ Set Node:
   [[50, 100], [51, 102], [52, 101]]      // Product B
 ]
 Horizon: 5
-Model: TiRex (fast)
+Model: Chronos2
 Output: Point
 ```
 One API call, two forecasts!
@@ -167,10 +171,11 @@ Automatically store forecasts in your database
 
 | Parameter | Required | Default | Values |
 |-----------|----------|---------|--------|
-| Model | ✓ | - | chronos2, flowstate, tirex |
+| Model | ✓ | - | chronos2 |
 | Input Data | ✓ | - | Array (1D, 2D, or 3D) |
 | Horizon | ✓ | - | 1-1000 |
 | Output Type | - | point | point, quantiles, samples |
+| Quantiles | - | - | Array of numbers between 0-1 (for quantiles output type) |
 | Model Version | - | "1" | String |
 
 ### Response Structure
@@ -266,8 +271,8 @@ $json.metadata.costAmount  // Per forecast
 
 ## Support
 
-- **Docs**: https://faim.ai/docs
+- **Docs**: https://faim.it.com/docs
 - **Issues**: https://github.com/faim-group/n8n-nodes-faim/issues
-- **Email**: support@faim.ai
+- **Email**: support@faim.it.com
 
 Happy forecasting! 🚀

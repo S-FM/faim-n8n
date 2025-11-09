@@ -6,11 +6,20 @@ import { ShapeConverter } from '../data/shapeConverter';
 import { ShapeReshaper } from '../data/shapeReshaper';
 import { ArrowSerializer } from '../arrow/serializer';
 
+/**
+ * Forecast response from FAIM API (n8n node mode - univariate only)
+ *
+ * Output shapes (after reshaping to original input format):
+ * - 1D input: point → number[], quantiles → number[][], samples → number[][]
+ * - 2D input: point → number[][], quantiles → number[][][], samples → number[][][]
+ *
+ * Note: All outputs are univariate (features=1), features dimension is removed.
+ */
 export interface ForecastResponse {
   forecast: {
-    point?: unknown; // Shape depends on input format: 1D → number[], 2D → number[][], 3D → number[][][]
-    quantiles?: unknown; // Shape depends on input format: 1D → number[][], 2D → number[][][], 3D → number[][][][]
-    samples?: unknown; // Shape depends on input format: 1D → number[][], 2D → number[][][], 3D → number[][][][]
+    point?: unknown; // 1D or 2D array depending on input format
+    quantiles?: unknown; // 2D or 3D array depending on input format
+    samples?: unknown; // 2D or 3D array depending on input format
   };
   metadata: {
     modelName: string;

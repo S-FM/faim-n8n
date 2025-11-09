@@ -292,9 +292,3 @@ pnpm run lint:fix
 5. Ensure linting passes: `pnpm run lint`
 6. Commit with clear message: `git commit -m 'Add amazing feature'`
 7. Push to branch and create Pull Request
-
-## Support
-
-- Issues: [GitHub Issues](https://github.com/faim-group/n8n-nodes-faim/issues)
-- Documentation: [README.md](README.md)
-- Examples: [EXAMPLES.md](EXAMPLES.md)

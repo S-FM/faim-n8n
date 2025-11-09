@@ -1,7 +1,22 @@
 import { ValidationError } from '../errors/customErrors';
 
-export type InputFormat = '1d' | '2d' | '3d';
+/**
+ * Input format type for FAIM n8n node
+ * The node only accepts 1D and 2D univariate time series data.
+ * 3D multivariate forecasting is not yet supported.
+ */
+export type InputFormat = '1d' | '2d';
 
+/**
+ * Normalized data structure for backend processing
+ *
+ * The backend API always expects 3D arrays with shape (batch, sequence, features).
+ * The FAIM n8n node restricts features to 1 (univariate only).
+ *
+ * Transformations:
+ * - 1D input (c) → (1, c, 1): Single time series of c timesteps
+ * - 2D input (b, c) → (b, c, 1): b time series, each with c timesteps
+ */
 export interface NormalizedData {
   x: number[][][]; // 3D array: (batch, sequence, features)
   batchSize: number;
@@ -11,8 +26,27 @@ export interface NormalizedData {
 }
 
 /**
- * Converts various input formats to 3D numpy-like array structure
- * Required format: (batch_size, sequence_length, features)
+ * Converts n8n node inputs (1D or 2D) to backend format (3D with features=1)
+ *
+ * The FAIM forecasting backend requires all data in 3D format: (batch, sequence, features).
+ * This converter normalizes user inputs to this format while tracking the original format
+ * for intelligent output reshaping.
+ *
+ * Supported input formats:
+ * - 1D: [1, 2, 3, ...] → (1, n, 1) - single time series
+ * - 2D: [[1, 2, 3], [4, 5, 6], ...] → (m, n, 1) - multiple time series
+ *
+ * Note: 3D multivariate inputs are rejected (features must equal 1)
+ *
+ * @example
+ * // 1D input
+ * ShapeConverter.normalize([10, 11, 12])
+ * // Returns: { x: [[[10], [11], [12]]], batchSize: 1, sequenceLength: 3, features: 1, inputFormat: '1d' }
+ *
+ * @example
+ * // 2D input (batch of 2 univariate series, 3 timesteps each)
+ * ShapeConverter.normalize([[10, 11, 12], [20, 21, 22]])
+ * // Returns: { x: [[[10], [11], [12]], [[20], [21], [22]]], batchSize: 2, sequenceLength: 3, features: 1, inputFormat: '2d' }
  */
 export class ShapeConverter {
   private static readonly MAX_ELEMENTS = 50_000_000; // 50M elements
@@ -67,21 +101,42 @@ export class ShapeConverter {
   }
 
   /**
-   * Convert 2D array to 3D
-   * Case 1: [[v1, v2], [v3, v4]] → [[[v1, v2], [v3, v4]]]
-   *         batch_size=1, sequence_length=n, features=2
-   * Case 2: [[v1], [v2], ...] → [[[v1], [v2], ...]]
-   *         batch_size=1, sequence_length=n, features=1
+   * Convert 2D array to 3D (batch, sequence, features)
+   *
+   * For n8n node: interprets 2D as batch of univariate series
+   * - [[v1_1, v1_2, ...], [v2_1, v2_2, ...], ...] → (batch=m, sequence=n, features=1)
+   * - m = number of rows (multiple series)
+   * - n = length of each row (sequence length per series)
+   * - features = 1 (univariate constraint - each element is a single value, not an array)
+   *
+   * Example: [[100, 101, 102], [200, 201, 202]] → batch=2 series, each 3 timesteps
+   * Converted to: [[[100], [101], [102]], [[200], [201], [202]]]
+   *
+   * NOTE: The n8n node expects univariate data. If rows contain multiple features (e.g., [[a,b], [c,d]]),
+   * this is multivariate and will be rejected by validation.
+   *
+   * Valid 2D formats:
+   * - [[v1], [v2], [v3]] = 3 series, 1 timestep each → batchSize=3, sequenceLength=1, features=1
+   * - [[v1, v2, v3], [v4, v5, v6]] = 2 series, 3 timesteps each → batchSize=2, sequenceLength=3, features=1
+   *
+   * Invalid 2D formats (multivariate - will be rejected):
+   * - [[v1, v2], [v3, v4]] = 2 rows with 2 values each → interpreted as 2 series, 2 timesteps
+   *   BUT each row element must be a scalar (univariate), so this becomes batchSize=2, sequenceLength=2, features=1 ✓
+   *   WAIT - that's valid! The check for multivariate is on whether row values are arrays or scalars.
+   *   If all values in a row are scalars, it's (batchSize, sequenceLength, features=1) ✓
+   *   If values in a row are arrays like [[v1,v2]] = that's 3D input, already handled above ✗
    */
   private static from2D(data: number[][]): NormalizedData {
     if (data.length === 0) {
       throw new ValidationError('Input array cannot be empty');
     }
 
-    const sequenceLength = data.length;
-    const features = Array.isArray(data[0]) ? data[0].length : 1;
+    // For 2D batch input: rows are different series, columns are timesteps
+    const batchSize = data.length; // Number of series/rows
+    const sequenceLength = data[0]?.length ?? 0; // Timesteps per series (length of first row)
+    const features = 1; // Univariate constraint (each scalar value represents 1 feature)
 
-    // Ensure all rows have same length
+    // Ensure all rows have same length (rectangular shape)
     for (let i = 0; i < data.length; i++) {
       if (!Array.isArray(data[i])) {
         throw new ValidationError(
@@ -89,17 +144,25 @@ export class ShapeConverter {
           'x',
         );
       }
-      if (data[i].length !== features) {
+      if (data[i].length !== sequenceLength) {
         throw new ValidationError(
-          `Inconsistent row length at index ${i}: expected ${features}, got ${data[i].length}`,
+          `Inconsistent row length at index ${i}: expected ${sequenceLength}, got ${data[i].length}`,
           'x',
         );
       }
     }
 
+    // Convert 2D (batch, sequence) to 3D (batch, sequence, features=1)
+    // Each row becomes: [[v1], [v2], [v3], ...] (wrapping each scalar value in an array)
+    // This interpretation assumes the 2D array is already in the format users intended:
+    // - Rows = different time series (batch dimension)
+    // - Columns = timesteps (sequence dimension)
+    // - Each scalar = univariate value (features=1)
+    const x = data.map(row => row.map(value => [value]));
+
     return {
-      x: [data],
-      batchSize: 1,
+      x,
+      batchSize,
       sequenceLength,
       features,
       inputFormat: '2d',
@@ -107,60 +170,51 @@ export class ShapeConverter {
   }
 
   /**
-   * Validate 3D array structure
+   * Reject 3D array inputs
+   *
+   * The n8n node does not support multivariate forecasting (3D arrays with features > 1).
+   * Users should provide either:
+   * - 1D array: [10, 11, 12, ...] for a single time series
+   * - 2D array: [[10], [11], [12], ...] for multiple univariate series
+   *
+   * @throws ValidationError 3D inputs are not supported
    */
   private static from3D(data: number[][][]): NormalizedData {
     if (data.length === 0) {
       throw new ValidationError('Input array cannot be empty');
     }
 
+    // Detect the shape for error reporting
     const batchSize = data.length;
-    const sequenceLength = data[0].length;
-    const features = data[0][0].length;
+    const sequenceLength = data[0]?.length ?? 0;
+    const features = data[0]?.[0]?.length ?? 0;
 
-    // Validate all batches have consistent shape
-    for (let b = 0; b < data.length; b++) {
-      if (!Array.isArray(data[b])) {
-        throw new ValidationError(
-          `Batch ${b} is not an array`,
-          'x',
-        );
-      }
-      if (data[b].length !== sequenceLength) {
-        throw new ValidationError(
-          `Batch ${b} has inconsistent sequence length: expected ${sequenceLength}, got ${data[b].length}`,
-          'x',
-        );
-      }
-      for (let s = 0; s < sequenceLength; s++) {
-        if (!Array.isArray(data[b][s])) {
-          throw new ValidationError(
-            `Batch ${b}, sequence ${s} is not an array`,
-            'x',
-          );
-        }
-        if (data[b][s].length !== features) {
-          throw new ValidationError(
-            `Batch ${b}, sequence ${s} has inconsistent features: expected ${features}, got ${data[b][s].length}`,
-            'x',
-          );
-        }
-      }
-    }
-
-    return {
-      x: data,
-      batchSize,
-      sequenceLength,
-      features,
-      inputFormat: '3d',
-    };
+    throw new ValidationError(
+      `3D multivariate input detected (shape: ${batchSize} batches × ${sequenceLength} sequence × ${features} features). ` +
+      'Multivariate forecasting is not yet supported. Please provide univariate data: ' +
+      '1D array [10, 11, 12] for single series, or ' +
+      '2D array [[10], [11], [12]] for multiple series.',
+      'x',
+    );
   }
 
   /**
    * Validate normalized data against constraints
+   *
+   * Note: This node only supports univariate forecasting (features=1).
+   * Multivariate data is rejected here.
    */
   private static validate(data: NormalizedData): void {
+    // Univariate-only constraint: The n8n node only supports single-feature forecasting
+    if (data.features !== 1) {
+      throw new ValidationError(
+        `Multivariate input detected (${data.features} features). ` +
+        'The n8n node only supports univariate forecasting (features=1). ' +
+        'Please provide univariate time series data.',
+        'features',
+      );
+    }
+
     // Validate dimensions
     if (data.batchSize <= 0 || data.batchSize > this.MAX_BATCH_SIZE) {
       throw new ValidationError(
@@ -176,6 +230,7 @@ export class ShapeConverter {
       );
     }
 
+    // Features constraint already validated above
     if (data.features <= 0 || data.features > this.MAX_FEATURES) {
       throw new ValidationError(
         `Features must be between 1 and ${this.MAX_FEATURES}, got ${data.features}`,

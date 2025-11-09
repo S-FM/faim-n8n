@@ -21,7 +21,20 @@ export interface BuiltRequest {
 }
 
 /**
- * Builds Arrow-formatted requests for FAIM forecast API
+ * Builds Arrow-formatted requests for FAIM forecast API (n8n node mode)
+ *
+ * The FAIM backend requires all requests in a specific format:
+ * - Data: 3D array (batch, sequence, features) serialized to Arrow IPC format
+ * - The n8n node restricts to univariate data: features must equal 1
+ * - Metadata: JSON object containing horizon, output_type, and optional parameters
+ *
+ * Request format:
+ * POST /v1/ts/forecast/{model}/{version}
+ * Authorization: Bearer {apiKey}
+ * Content-Type: application/vnd.apache.arrow.stream
+ * Accept-Encoding: identity (request uncompressed response)
+ *
+ * Body: Arrow IPC binary stream
  */
 export class RequestBuilder {
   private static readonly VALID_MODELS = ['chronos2'];
@@ -30,7 +43,19 @@ export class RequestBuilder {
   private static readonly MAX_HORIZON = 1000;
 
   /**
-   * Build complete forecast request
+   * Build complete forecast request with validation
+   *
+   * Validates:
+   * - Model is supported (chronos2)
+   * - Horizon is in valid range (1-1000)
+   * - Output type is valid (point, quantiles, samples)
+   * - Data is univariate (features=1)
+   *
+   * @param req - Forecast request with normalized data
+   * @param apiKey - FAIM API key for authorization
+   * @param baseUrl - FAIM API base URL
+   * @returns Built request with Arrow-serialized body and headers
+   * @throws ValidationError if any validation fails
    */
   static build(
     req: ForecastRequest,
@@ -41,6 +66,7 @@ export class RequestBuilder {
     this.validateModel(req.model);
     this.validateHorizon(req.horizon);
     this.validateOutputType(req.outputType);
+    this.validateUnivariateData(req.data);
 
     // Validate and build metadata
     const metadata = this.buildMetadata(req);
@@ -138,6 +164,26 @@ export class RequestBuilder {
       throw new ValidationError(
         `Invalid output_type '${outputType}'. Must be one of: ${this.VALID_OUTPUT_TYPES.join(', ')}`,
         'outputType',
+      );
+    }
+  }
+
+  /**
+   * Validate that data is univariate (features=1)
+   *
+   * The n8n node only supports univariate forecasting.
+   * Multivariate data should have been rejected earlier in ShapeConverter,
+   * but we double-check here as a safety measure.
+   *
+   * @throws ValidationError if features != 1
+   */
+  private static validateUnivariateData(data: NormalizedData): void {
+    if (data.features !== 1) {
+      throw new ValidationError(
+        `Multivariate data detected (features=${data.features}). ` +
+        'The n8n node only supports univariate forecasting (features=1). ' +
+        'This error should not occur - please check input validation in ShapeConverter.',
+        'data',
       );
     }
   }

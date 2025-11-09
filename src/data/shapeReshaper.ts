@@ -1,228 +1,370 @@
 import { InputFormat } from './shapeConverter';
 
 /**
- * Converts backend 3D output back to the original input format
+ * Converts backend 3D forecast output back to the original n8n node input format
  *
- * Shape transformation rules:
- * - 1D input (c) → backend processes as (1,c,1) → output (1,h,1) → reshape to (h)
- * - 2D input (b,c) → backend processes as (b,c,1) → output (b,h,1) → reshape to (b,h)
- *   - For quantiles: output (b,h,q,1) → reshape to (b,h,q)
- * - 3D input (b,c,f) → backend processes as (b,c,f) → output (b,h,f) → keep as 3D
- *   - For quantiles: output (b,h,q,f) → keep as 4D
+ * The FAIM backend always processes data in 3D format: (batch, sequence, features).
+ * For the n8n node, we restrict to univariate data (features=1) and reshape outputs
+ * back to the user's original input dimensions.
+ *
+ * Supported input formats (univariate only):
+ * - 1D: user provides [v1, v2, ...] → backend processes as (1, n, 1) →
+ *   Point output (1, h, 1) reshaped to (h)
+ *   Quantiles output (1, h, q, 1) reshaped to (h, q)
+ *   Samples output (1, h, s, 1) reshaped to (h, s)
+ *
+ * - 2D: user provides [[v1], [v2], ...] → backend processes as (m, n, 1) →
+ *   Point output (m, h, 1) reshaped to (m, h)
+ *   Quantiles output (m, h, q, 1) reshaped to (m, h, q)
+ *   Samples output (m, h, s, 1) reshaped to (m, h, s)
+ *
+ * Note: All outputs have features dimension = 1, so we always extract the last index [0]
+ * from the features axis to match user expectations.
  */
 export class ShapeReshaper {
   /**
-   * Reshape point forecast output back to original input format
-   * Backend always returns (batch, horizon, features)
+   * Reshape point forecast from backend format back to user input format
+   *
+   * Backend returns: (batch, horizon, features=1)
+   * Transforms based on original input format:
+   * - 1D: (1, h, 1) → extract [0][*][0] to get (h)
+   * - 2D: (m, h, 1) → extract [*][*][0] to get (m, h)
+   *
+   * Note: Backend may return feature values as arrays [value] or objects {"0": value}.
+   * This method handles both formats transparently.
+   *
+   * @param forecast - 3D array from backend: (batch, horizon, features)
+   * @param inputFormat - Original input format ('1d' or '2d')
+   * @returns Reshaped array matching original input format
+   * @throws Error if forecast shape is invalid
    */
   static reshapePointForecast(
     forecast: number[][][],
     inputFormat: InputFormat,
-  ): number[] | number[][] | number[][][] {
+  ): number[] | number[][] {
+    this.validatePointShape(forecast);
+
+    // Helper function to extract feature value from array or object format
+    const extractFeatureValue = (featureContainer: unknown): number => {
+      if (Array.isArray(featureContainer) && featureContainer.length > 0) {
+        const value = (featureContainer as unknown[])[0];
+        if (typeof value === 'number') {
+          return value;
+        }
+      }
+      // Handle object format {"0": value, ...}
+      if (typeof featureContainer === 'object' && featureContainer !== null && !Array.isArray(featureContainer)) {
+        const values = Object.values(featureContainer as Record<string, unknown>);
+        if (values.length > 0) {
+          const firstValue = values[0];
+          if (typeof firstValue === 'number') {
+            return firstValue;
+          }
+        }
+      }
+      throw new Error(
+        `Invalid feature format: expected array [value] or object {"0": value}, got ${JSON.stringify(featureContainer)}`
+      );
+    };
+
     if (inputFormat === '1d') {
-      // Input was (c), output should be (h)
-      // Backend returns (1, h, 1), extract [0][*][0]
-      return forecast[0].map((timestep) => timestep[0]);
+      // 1D input: extract first batch and remove features dimension
+      // (1, h, 1) → (h)
+      return forecast[0].map((timestep) => extractFeatureValue(timestep));
     }
 
-    if (inputFormat === '2d') {
-      // Input was (b, c), output should be (b, h)
-      // Backend returns (b, h, 1), extract [*][*][0]
-      return forecast.map((batch) => batch.map((timestep) => timestep[0]));
-    }
-
-    // inputFormat === '3d'
-    // Input was (b, c, f), output should be (b, h, f)
-    // Backend returns (b, h, f), return as-is
-    return forecast;
+    // 2D input: remove features dimension from all batches
+    // (m, h, 1) → (m, h)
+    return forecast.map((batch) => batch.map((timestep) => extractFeatureValue(timestep)));
   }
 
   /**
-   * Reshape quantiles forecast output back to original input format
-   * Backend returns either (batch, horizon, quantiles, features) [4D] or
-   * (batch, horizon, quantiles) [3D] depending on features=1 optimization
+   * Reshape quantiles forecast from backend format back to user input format
+   *
+   * Backend returns: (batch, horizon, quantiles, features=1)
+   * Transforms based on original input format:
+   * - 1D: (1, h, q, 1) → extract [0][*][*][0] to get (h, q)
+   * - 2D: (m, h, q, 1) → extract [*][*][*][0] to get (m, h, q)
+   *
+   * Note: Backend may return feature values as arrays [value] or objects {"0": value}.
+   * This method handles both formats transparently.
+   *
+   * @param forecast - 4D array from backend: (batch, horizon, quantiles, features)
+   * @param inputFormat - Original input format ('1d' or '2d')
+   * @returns Reshaped array matching original input format
+   * @throws Error if forecast shape is invalid
    */
   static reshapeQuantilesForecast(
     forecast: unknown,
     inputFormat: InputFormat,
-  ): number[][] | number[][][] | number[][][][] {
-    // Validate input
+  ): number[][] | number[][][] {
+    // Type guard and validation
     if (!Array.isArray(forecast) || forecast.length === 0) {
       throw new Error('Invalid quantiles forecast: expected non-empty array');
     }
 
-    // Detect actual dimensionality
-    const dims = this.getArrayDimensions(forecast);
+    const forecast4d = forecast as number[][][][];
+    this.validateQuantilesShape(forecast4d);
 
-    if (dims === 3) {
-      // Backend returned (batch, horizon, quantiles) - features dimension was squeezed
-      // Treat as (batch, horizon, quantiles, 1) for consistency
-      const forecast3d = forecast as number[][][];
-
-      if (inputFormat === '1d') {
-        // Extract first batch: [0] to get (horizon, quantiles)
-        return forecast3d[0];
+    // Helper function to extract feature value from array or object format
+    const extractFeatureValue = (featureContainer: unknown): number => {
+      if (Array.isArray(featureContainer) && featureContainer.length > 0) {
+        const value = (featureContainer as unknown[])[0];
+        if (typeof value === 'number') {
+          return value;
+        }
       }
-
-      if (inputFormat === '2d') {
-        // Keep as-is: (batch, horizon, quantiles)
-        return forecast3d;
+      // Handle object format {"0": value, ...}
+      if (typeof featureContainer === 'object' && featureContainer !== null && !Array.isArray(featureContainer)) {
+        const values = Object.values(featureContainer as Record<string, unknown>);
+        if (values.length > 0) {
+          const firstValue = values[0];
+          if (typeof firstValue === 'number') {
+            return firstValue;
+          }
+        }
       }
+      throw new Error(
+        `Invalid feature format: expected array [value] or object {"0": value}, got ${JSON.stringify(featureContainer)}`
+      );
+    };
 
-      // inputFormat === '3d'
-      // Expand back to 4D: (batch, horizon, quantiles, 1)
-      return forecast3d.map((batch) =>
-        batch.map((timestep) => timestep.map((q) => [q])),
+    if (inputFormat === '1d') {
+      // 1D input: extract first batch and remove features dimension
+      // (1, h, q, 1) → (h, q)
+      const batch = forecast4d[0];
+      return batch.map((timestep) =>
+        timestep.map((quantile) => extractFeatureValue(quantile))
       );
     }
 
-    if (dims === 4) {
-      // Backend returned (batch, horizon, quantiles, features) [4D]
-      const forecast4d = forecast as number[][][][];
-
-      if (inputFormat === '1d') {
-        // Input was (c), output should be (h, q)
-        // Backend returns (1, h, q, 1), extract [0][*][*][0]
-        const batch = forecast4d[0];
-        if (!Array.isArray(batch)) {
-          throw new Error('Invalid quantiles forecast shape: expected 4D array');
-        }
-        return batch.map((timestep) => {
-          if (!Array.isArray(timestep)) {
-            throw new Error('Invalid quantiles forecast shape at timestep');
-          }
-          return timestep.map((quantile) => {
-            if (!Array.isArray(quantile)) {
-              throw new Error('Invalid quantiles forecast shape at quantile level');
-            }
-            return quantile[0];
-          });
-        });
-      }
-
-      if (inputFormat === '2d') {
-        // Input was (b, c), output should be (b, h, q)
-        // Backend returns (b, h, q, 1), extract [*][*][*][0]
-        return forecast4d.map((batch) => {
-          if (!Array.isArray(batch)) {
-            throw new Error('Invalid quantiles forecast shape: expected 4D array');
-          }
-          return batch.map((timestep) => {
-            if (!Array.isArray(timestep)) {
-              throw new Error('Invalid quantiles forecast shape at timestep');
-            }
-            return timestep.map((quantile) => {
-              if (!Array.isArray(quantile)) {
-                throw new Error('Invalid quantiles forecast shape at quantile level');
-              }
-              return quantile[0];
-            });
-          });
-        });
-      }
-
-      // inputFormat === '3d'
-      // Input was (b, c, f), output should be (b, h, q, f)
-      // Backend returns (b, h, q, f), return as-is
-      return forecast4d;
-    }
-
-    throw new Error(`Unexpected quantiles array dimensionality: ${dims}. Expected 3 or 4.`);
+    // 2D input: remove features dimension from all batches
+    // (m, h, q, 1) → (m, h, q)
+    return forecast4d.map((batch) =>
+      batch.map((timestep) =>
+        timestep.map((quantile) => extractFeatureValue(quantile))
+      )
+    );
   }
 
   /**
-   * Detect dimensionality of an array
-   */
-  private static getArrayDimensions(arr: unknown): number {
-    if (!Array.isArray(arr) || arr.length === 0) {
-      return 0;
-    }
-
-    let dims = 1;
-    let current: unknown = arr[0];
-
-    while (Array.isArray(current) && current.length > 0) {
-      dims++;
-      current = current[0];
-    }
-
-    return dims;
-  }
-
-  /**
-   * Reshape samples forecast output back to original input format
-   * Backend returns either (batch, horizon, samples, features) [4D] or
-   * (batch, horizon, samples) [3D] depending on features=1 optimization
+   * Reshape samples forecast from backend format back to user input format
+   *
+   * Backend returns: (batch, horizon, samples, features=1)
+   * Transforms based on original input format:
+   * - 1D: (1, h, s, 1) → extract [0][*][*][0] to get (h, s)
+   * - 2D: (m, h, s, 1) → extract [*][*][*][0] to get (m, h, s)
+   *
+   * Note: Backend may return feature values as arrays [value] or objects {"0": value}.
+   * This method handles both formats transparently.
+   *
+   * @param forecast - 4D array from backend: (batch, horizon, samples, features)
+   * @param inputFormat - Original input format ('1d' or '2d')
+   * @returns Reshaped array matching original input format
+   * @throws Error if forecast shape is invalid
    */
   static reshapeSamplesForecast(
     forecast: unknown,
     inputFormat: InputFormat,
-  ): number[][] | number[][][] | number[][][][] {
-    // Validate input
+  ): number[][] | number[][][] {
+    // Type guard and validation
     if (!Array.isArray(forecast) || forecast.length === 0) {
       throw new Error('Invalid samples forecast: expected non-empty array');
     }
 
-    // Detect actual dimensionality
-    const dims = this.getArrayDimensions(forecast);
+    const forecast4d = forecast as number[][][][];
+    this.validateSamplesShape(forecast4d);
 
-    if (dims === 3) {
-      // Backend returned (batch, horizon, samples) - features dimension was squeezed
-      const forecast3d = forecast as number[][][];
-
-      if (inputFormat === '1d') {
-        // Extract first batch: [0] to get (horizon, samples)
-        return forecast3d[0];
+    // Helper function to extract feature value from array or object format
+    const extractFeatureValue = (featureContainer: unknown): number => {
+      if (Array.isArray(featureContainer) && featureContainer.length > 0) {
+        const value = (featureContainer as unknown[])[0];
+        if (typeof value === 'number') {
+          return value;
+        }
       }
-
-      if (inputFormat === '2d') {
-        // Keep as-is: (batch, horizon, samples)
-        return forecast3d;
+      // Handle object format {"0": value, ...}
+      if (typeof featureContainer === 'object' && featureContainer !== null && !Array.isArray(featureContainer)) {
+        const values = Object.values(featureContainer as Record<string, unknown>);
+        if (values.length > 0) {
+          const firstValue = values[0];
+          if (typeof firstValue === 'number') {
+            return firstValue;
+          }
+        }
       }
+      throw new Error(
+        `Invalid feature format: expected array [value] or object {"0": value}, got ${JSON.stringify(featureContainer)}`
+      );
+    };
 
-      // inputFormat === '3d'
-      // Expand back to 4D: (batch, horizon, samples, 1)
-      return forecast3d.map((batch) =>
-        batch.map((timestep) => timestep.map((s) => [s])),
+    if (inputFormat === '1d') {
+      // 1D input: extract first batch and remove features dimension
+      // (1, h, s, 1) → (h, s)
+      const batch = forecast4d[0];
+      return batch.map((timestep) =>
+        timestep.map((sample) => extractFeatureValue(sample))
       );
     }
 
-    if (dims === 4) {
-      // Backend returned (batch, horizon, samples, features) [4D]
-      const forecast4d = forecast as number[][][][];
+    // 2D input: remove features dimension from all batches
+    // (m, h, s, 1) → (m, h, s)
+    return forecast4d.map((batch) =>
+      batch.map((timestep) =>
+        timestep.map((sample) => extractFeatureValue(sample))
+      )
+    );
+  }
 
-      if (inputFormat === '1d') {
-        // Input was (c), output should be (h, s)
-        // Backend returns (1, h, s, 1), extract [0][*][*][0]
-        return forecast4d[0].map((timestep) =>
-          timestep.map((sample) => {
-            if (!Array.isArray(sample)) {
-              throw new Error('Invalid samples forecast shape at sample level');
-            }
-            return sample[0];
-          }),
-        );
-      }
-
-      if (inputFormat === '2d') {
-        // Input was (b, c), output should be (b, h, s)
-        // Backend returns (b, h, s, 1), extract [*][*][*][0]
-        return forecast4d.map((batch) =>
-          batch.map((timestep) => timestep.map((sample) => {
-            if (!Array.isArray(sample)) {
-              throw new Error('Invalid samples forecast shape at sample level');
-            }
-            return sample[0];
-          })),
-        );
-      }
-
-      // inputFormat === '3d'
-      // Input was (b, c, f), output should be (b, h, s, f)
-      // Backend returns (b, h, s, f), return as-is
-      return forecast4d;
+  /**
+   * Validate point forecast shape
+   *
+   * Expected: 3D array with features=1
+   * Shape: (batch, horizon, 1)
+   *
+   * Note: Feature dimension may be array [value] or object {"0": value}.
+   * This validates the structure without rejecting either format.
+   *
+   * @throws Error if shape is invalid
+   */
+  private static validatePointShape(forecast: unknown): void {
+    if (!Array.isArray(forecast) || forecast.length === 0) {
+      throw new Error('Point forecast: empty batch dimension');
     }
 
-    throw new Error(`Unexpected samples array dimensionality: ${dims}. Expected 3 or 4.`);
+    const batch = (forecast as unknown[])[0];
+    if (!Array.isArray(batch) || batch.length === 0) {
+      throw new Error('Point forecast: empty horizon dimension');
+    }
+
+    const timestep = (batch as unknown[])[0];
+
+    // Check if timestep is a number (2D array instead of 3D)
+    if (typeof timestep === 'number') {
+      throw new Error(
+        'Point forecast: received 2D array instead of 3D. Expected shape (batch, horizon, features=1)'
+      );
+    }
+
+    // Accept either array or object format for features
+    if (Array.isArray(timestep)) {
+      if (timestep.length !== 1) {
+        throw new Error(
+          `Point forecast: expected features=1, got features=${timestep.length}`
+        );
+      }
+    } else if (typeof timestep === 'object' && timestep !== null && !Array.isArray(timestep)) {
+      // Object format {"0": value} is acceptable
+      const objectValues: unknown[] = Object.values(timestep as Record<string, unknown>);
+      if (objectValues.length !== 1) {
+        throw new Error(
+          `Point forecast: expected features=1, got features=${objectValues.length}`
+        );
+      }
+    } else {
+      throw new Error(
+        `Point forecast: invalid timestep type: ${typeof timestep}. Expected array [value] or object {"0": value} but got ${JSON.stringify(timestep)}`
+      );
+    }
+  }
+
+  /**
+   * Validate quantiles forecast shape
+   *
+   * Expected: 4D array with features=1
+   * Shape: (batch, horizon, quantiles, 1)
+   *
+   * Note: Feature dimension may be array [value] or object {"0": value}.
+   * This validates the structure without rejecting either format.
+   *
+   * @throws Error if shape is invalid
+   */
+  private static validateQuantilesShape(forecast: number[][][][]): void {
+    if (forecast?.length === 0) {
+      throw new Error('Quantiles forecast: empty batch dimension');
+    }
+
+    const batch = forecast?.[0];
+    if (!Array.isArray(batch) || batch.length === 0) {
+      throw new Error('Quantiles forecast: empty horizon dimension');
+    }
+
+    const timestep = batch[0];
+    if (!Array.isArray(timestep) || timestep.length === 0) {
+      throw new Error('Quantiles forecast: empty quantiles dimension');
+    }
+
+    const quantile = timestep[0];
+
+    // Accept either array or object format for features
+    if (Array.isArray(quantile)) {
+      if (quantile.length !== 1) {
+        throw new Error(
+          `Quantiles forecast: expected features=1, got features=${quantile.length}`
+        );
+      }
+    } else if (typeof quantile === 'object' && quantile !== null && !Array.isArray(quantile)) {
+      // Object format {"0": value} is acceptable
+      const objectValues: unknown[] = Object.values(quantile as Record<string, unknown>);
+      if (objectValues.length !== 1) {
+        throw new Error(
+          `Quantiles forecast: expected features=1, got features=${objectValues.length}`
+        );
+      }
+    } else {
+      throw new Error(
+        `Quantiles forecast: invalid quantile type. Expected array [value] or object {"0": value}`
+      );
+    }
+  }
+
+  /**
+   * Validate samples forecast shape
+   *
+   * Expected: 4D array with features=1
+   * Shape: (batch, horizon, samples, 1)
+   *
+   * Note: Feature dimension may be array [value] or object {"0": value}.
+   * This validates the structure without rejecting either format.
+   *
+   * @throws Error if shape is invalid
+   */
+  private static validateSamplesShape(forecast: number[][][][]): void {
+    if (forecast?.length === 0) {
+      throw new Error('Samples forecast: empty batch dimension');
+    }
+
+    const batch = forecast?.[0];
+    if (!Array.isArray(batch) || batch.length === 0) {
+      throw new Error('Samples forecast: empty horizon dimension');
+    }
+
+    const timestep = batch[0];
+    if (!Array.isArray(timestep) || timestep.length === 0) {
+      throw new Error('Samples forecast: empty samples dimension');
+    }
+
+    const sample = timestep[0];
+
+    // Accept either array or object format for features
+    if (Array.isArray(sample)) {
+      if (sample.length !== 1) {
+        throw new Error(
+          `Samples forecast: expected features=1, got features=${sample.length}`
+        );
+      }
+    } else if (typeof sample === 'object' && sample !== null && !Array.isArray(sample)) {
+      // Object format {"0": value} is acceptable
+      const objectValues: unknown[] = Object.values(sample as Record<string, unknown>);
+      if (objectValues.length !== 1) {
+        throw new Error(
+          `Samples forecast: expected features=1, got features=${objectValues.length}`
+        );
+      }
+    } else {
+      throw new Error(
+        `Samples forecast: invalid sample type. Expected array [value] or object {"0": value}`
+      );
+    }
   }
 }

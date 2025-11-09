@@ -1,8 +1,8 @@
 # FAIM n8n Node
 
-Generate high-quality time-series forecasts using **FAIM** (Fast AI for Models) in n8n workflows.
+Generate high-quality time-series forecasts using **FAIM** (Foundation AI Models) in n8n workflows.
 
-Uses the state-of-the-art **Chronos 2.0** large language model for accurate forecasting.
+Uses the state-of-the-art **Chronos 2.0** foundation time-series model for accurate forecasting.
 
 ## Installation
 
@@ -18,13 +18,13 @@ Or use n8n's community node installer UI.
 
 ### 1. Get an API Key
 
-Sign up at [faim.ai](https://faim.ai) to get your API key.
+Sign up at [faim.it.com](https://faim.it.com) to get your API key.
 
 ### 2. Add Credentials in n8n
 
 1. Open n8n and go to **Credentials**
 2. Create new credential of type **FAIM API Key**
-3. Paste your API key (format: `sk-...`)
+3. Paste your API key (format: `api_key_1-...`)
 
 ### 3. Use the Node
 
@@ -35,47 +35,25 @@ Sign up at [faim.ai](https://faim.ai) to get your API key.
 
 ## Input Format
 
-Time-series data can be provided in multiple formats (automatically converted to internal format):
+The node accepts **univariate time-series data only** (single feature per timestamp). Data can be provided in two formats:
 
-### 1D Array (Univariate)
+### 1D Array (Single Time Series)
 ```json
 [10, 11, 12, 13, 14, 15]
 ```
-Converted to shape: `(batch=1, sequence=6, features=1)`
+Single series with 6 timesteps. Returns 1D output: `[forecast1, forecast2, ...]`
 
-### 2D Array (Univariate Multiple)
+### 2D Array (Multiple Independent Series - Batch)
 ```json
 [
-  [10, 11, 12],
-  [13, 14, 15]
+  [10, 11, 12, 13, 14, 15],
+  [20, 21, 22, 23, 24, 25],
+  [100, 101, 102, 103, 104, 105]
 ]
 ```
-Converted to shape: `(batch=1, sequence=2, features=2)`
+Batch of 3 independent univariate series, each with 6 timesteps. Returns 2D output: `[[forecast1...], [forecast2...], [forecast3...]]`
 
-### 2D Array (Multivariate)
-```json
-[
-  [10, 20.5],
-  [11, 21.2],
-  [12, 22.1]
-]
-```
-Converted to shape: `(batch=1, sequence=3, features=2)`
-
-### 3D Array (Multiple Time Series / Batches)
-```json
-[
-  [  // Batch 1
-    [10, 20.5],
-    [11, 21.2]
-  ],
-  [  // Batch 2
-    [100, 200.5],
-    [101, 201.2]
-  ]
-]
-```
-Shape: `(batch=2, sequence=2, features=2)`
+**Note**: Each series is univariate (single feature per timestamp). Multivariate inputs with multiple features per timestamp are not currently supported.
 
 ## Node Parameters
 
@@ -160,7 +138,7 @@ The node provides clear error messages for common issues:
 |-------|-------|----------|
 | **Invalid API key** | Wrong or expired key | Check credentials in n8n |
 | **Request too large** | Payload > 100MB | Reduce batch size or sequence length |
-| **Insufficient funds** | Low account balance | Add credit at faim.ai |
+| **Insufficient funds** | Low account balance | Add credit at faim.it.com |
 | **Model not found** | Invalid model/version | Check model name spelling |
 | **Timeout** | Request too slow | Reduce input size and retry |
 | **Invalid input** | Wrong data format | Ensure data is numeric array |
@@ -231,8 +209,15 @@ const response = await client.forecast(
 
 ### "Invalid data format"
 - Ensure input is a JSON array of numbers
+- Use 1D or 2D format only (1D: `[v1, v2, ...]` or 2D: `[[v1, v2], [v3, v4], ...]`)
+- Do NOT use 3D arrays or multivariate inputs (multiple features per timestamp)
 - Arrays must be rectangular (consistent dimensions)
 - No null or undefined values allowed
+
+### "Multivariate input detected"
+- This error means you provided multiple features per timestamp (e.g., `[[10, 20], [11, 21]]`)
+- The node only supports univariate data (single feature per timestamp)
+- Use format: `[10, 11, 12]` or `[[10], [11], [12]]` for single feature per timestamp
 
 ### "Timeout errors"
 - Reduce batch size (split into smaller requests)
@@ -273,9 +258,8 @@ const response = await client.forecast(
 
 ## Support
 
-- Documentation: [faim.ai/docs](https://faim.ai/docs)
-- Issues: [GitHub Issues](https://github.com/faim-group/n8n-nodes-faim/issues)
-- Email: support@faim.ai
+- Documentation: [faim.it.com/api-docs](https://faim.it.com/api-docs)
+- Email: support@faim.it.com
 
 ## License
 

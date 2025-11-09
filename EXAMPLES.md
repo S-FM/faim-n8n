@@ -163,7 +163,7 @@ FAIM Forecast → PostgreSQL/MongoDB → Update your system
 ### Error: "Invalid API key"
 - Check credentials are properly set in n8n
 - Verify API key format: `sk-...`
-- Confirm key is active on faim.ai dashboard
+- Confirm key is active on faim.it.com dashboard
 
 ### Error: "Request too large"
 - Reduce batch size or sequence length
@@ -195,5 +195,5 @@ FAIM Forecast → PostgreSQL/MongoDB → Update your system
 ## Support
 
 - Full documentation: [README.md](README.md)
-- API reference: [faim.ai/docs](https://faim.ai/docs)
+- API reference: [faim.it.com/docs](https://faim.it.com/docs)
 - Issues: [GitHub](https://github.com/faim-group/n8n-nodes-faim)

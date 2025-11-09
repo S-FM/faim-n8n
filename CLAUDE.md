@@ -514,3 +514,4 @@ Before submitting code:
   For details: check the ../faim-client/faim_sdk/utils.py
 
 ### To check the official documentation of global services always use context7 tool
+- when u need to find somehting in the documentation of any service/tool - use context7 to fetch the actual information
