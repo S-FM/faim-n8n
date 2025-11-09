@@ -11,7 +11,7 @@
     },
     {
       "parameters": {
-        "jsonData": "{\n  \"multipleSeries\": [\n    [[100, 101, 102], [103, 104, 105]],\n    [[200, 202, 204], [206, 208, 210]],\n    [[50, 51, 50], [51, 52, 51]]\n  ]\n}"
+        "jsonData": "{\n  \"multipleSeries\": [\n    [100, 101, 102, 103, 104, 105],\n    [200, 202, 204, 206, 208, 210],\n    [50, 51, 50, 51, 52, 51]\n  ]\n}"
       },
       "id": "2",
       "name": "3 Time Series (Batch)",
@@ -31,7 +31,7 @@
       },
       "id": "3",
       "name": "FAIM Batch Forecast",
-      "type": "n8n-nodes-faim.faimForecast",
+      "type": "@faim-group/n8n-nodes-faim.faimForecast",
       "typeVersion": 1,
       "position": [400, 100],
       "credentials": {
@@ -43,7 +43,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Extract results for each batch item\nconst forecasts = $json.forecast.point;\nconst results = [];\n\nfor (let i = 0; i < forecasts.length; i++) {\n  results.push({\n    \"seriesId\": i + 1,\n    \"forecast\": forecasts[i],\n    \"lastValue\": forecasts[i][0][0],\n    \"nextStep\": forecasts[i][0][0] // Simplified - would be the first forecast step\n  });\n}\n\nreturn results;"
+        "jsCode": "// Extract results for each batch item (series)\nconst forecasts = $json.forecast.point;  // Shape: (batchSize=3, horizon=3)\nconst results = [];\n\nfor (let i = 0; i < forecasts.length; i++) {\n  const series = forecasts[i];  // forecast for series i\n  results.push({\n    \"seriesId\": i + 1,\n    \"forecast\": series,  // Array of 3 forecast values\n    \"nextValue\": series[0],  // First forecast timestep\n    \"trend\": series[series.length - 1] > series[0] ? \"increasing\" : \"decreasing\"\n  });\n}\n\nreturn results;"
       },
       "id": "4",
       "name": "Process Batch Results",

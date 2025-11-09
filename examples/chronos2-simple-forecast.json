@@ -30,7 +30,7 @@
       },
       "id": "3",
       "name": "FAIM Forecast",
-      "type": "n8n-nodes-faim.faimForecast",
+      "type": "@faim-group/n8n-nodes-faim.faimForecast",
       "typeVersion": 1,
       "position": [400, 100],
       "credentials": {
