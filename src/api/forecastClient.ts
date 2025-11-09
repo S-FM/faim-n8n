@@ -143,16 +143,19 @@ export class ForecastClient {
     try {
       if (typeof responseData.point !== 'undefined' && responseData.point !== null) {
         const pointData = responseData.point as number[][][];
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         reshapedPoint = ShapeReshaper.reshapePointForecast(pointData, inputFormat);
       }
 
       if (typeof responseData.quantiles !== 'undefined' && responseData.quantiles !== null) {
         const quantilesData = responseData.quantiles as number[][][][];
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         reshapedQuantiles = ShapeReshaper.reshapeQuantilesForecast(quantilesData, inputFormat);
       }
 
       if (typeof responseData.samples !== 'undefined' && responseData.samples !== null) {
         const samplesData = responseData.samples as number[][][][];
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         reshapedSamples = ShapeReshaper.reshapeSamplesForecast(samplesData, inputFormat);
       }
     } catch (reshapeError) {
