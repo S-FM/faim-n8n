@@ -142,24 +142,18 @@ export class ForecastClient {
 
     try {
       if (typeof responseData.point !== 'undefined' && responseData.point !== null) {
-        reshapedPoint = ShapeReshaper.reshapePointForecast(
-          responseData.point as number[][][],
-          inputFormat,
-        );
+        const pointData = responseData.point as number[][][];
+        reshapedPoint = ShapeReshaper.reshapePointForecast(pointData, inputFormat);
       }
 
       if (typeof responseData.quantiles !== 'undefined' && responseData.quantiles !== null) {
-        reshapedQuantiles = ShapeReshaper.reshapeQuantilesForecast(
-          responseData.quantiles as number[][][][],
-          inputFormat,
-        );
+        const quantilesData = responseData.quantiles as number[][][][];
+        reshapedQuantiles = ShapeReshaper.reshapeQuantilesForecast(quantilesData, inputFormat);
       }
 
       if (typeof responseData.samples !== 'undefined' && responseData.samples !== null) {
-        reshapedSamples = ShapeReshaper.reshapeSamplesForecast(
-          responseData.samples as number[][][][],
-          inputFormat,
-        );
+        const samplesData = responseData.samples as number[][][][];
+        reshapedSamples = ShapeReshaper.reshapeSamplesForecast(samplesData, inputFormat);
       }
     } catch (reshapeError) {
       const errorMsg = reshapeError instanceof Error ? reshapeError.message : String(reshapeError);

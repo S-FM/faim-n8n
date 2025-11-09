@@ -112,12 +112,12 @@ export class FAIMForecast implements INodeType {
     for (let i = 0; i < items.length; i++) {
       try {
         // Get input data
-        let inputData = this.getNodeParameter('inputData', i);
+        let inputData: unknown = this.getNodeParameter('inputData', i);
 
         // Parse string input if needed
         if (typeof inputData === 'string') {
           try {
-            inputData = JSON.parse(inputData) as unknown;
+            inputData = JSON.parse(inputData);
           } catch {
             throw new NodeOperationError(
               this.getNode(),
