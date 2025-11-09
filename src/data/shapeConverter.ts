@@ -1,10 +1,13 @@
 import { ValidationError } from '../errors/customErrors';
 
+export type InputFormat = '1d' | '2d' | '3d';
+
 export interface NormalizedData {
   x: number[][][]; // 3D array: (batch, sequence, features)
   batchSize: number;
   sequenceLength: number;
   features: number;
+  inputFormat: InputFormat; // Track original input format for output reshaping
 }
 
 /**
@@ -59,6 +62,7 @@ export class ShapeConverter {
       batchSize: 1,
       sequenceLength: data.length,
       features: 1,
+      inputFormat: '1d',
     };
   }
 
@@ -98,6 +102,7 @@ export class ShapeConverter {
       batchSize: 1,
       sequenceLength,
       features,
+      inputFormat: '2d',
     };
   }
 
@@ -148,6 +153,7 @@ export class ShapeConverter {
       batchSize,
       sequenceLength,
       features,
+      inputFormat: '3d',
     };
   }
 

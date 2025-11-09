@@ -250,7 +250,7 @@ import { ForecastClient } from '@faim-group/n8n-nodes-faim';
 
 const client = new ForecastClient({
   apiKey: 'sk-...',
-  baseUrl: 'https://api.faim.com',
+  baseUrl: 'https://api.faim.it.com',
   timeoutMs: 30000,
   maxRetries: 3,
 });

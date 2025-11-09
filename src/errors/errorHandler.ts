@@ -108,6 +108,8 @@ export class ErrorHandler {
         return `Invalid input: ${error.message}`;
       case 'INFERENCE_ERROR':
         return 'Model inference failed. Check input data format.';
+      case 'DATA_PROCESSING_ERROR':
+        return `Data processing error: ${error.message}`;
       case 'NETWORK_ERROR':
         return 'Network error. Check connection and retry.';
       default:

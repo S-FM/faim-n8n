@@ -87,6 +87,14 @@ export class SerializationError extends FaimError {
   }
 }
 
+export class DataProcessingError extends FaimError {
+  constructor(message: string) {
+    super(message, 'DATA_PROCESSING_ERROR', 500, false);
+    this.name = 'DataProcessingError';
+    Object.setPrototypeOf(this, DataProcessingError.prototype);
+  }
+}
+
 export class ApiError extends FaimError {
   constructor(
     errorCode: string,

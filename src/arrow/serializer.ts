@@ -91,7 +91,7 @@ export class ArrowSerializer {
       // Create a temporary table to get batches with inferred schema
       const columnDict: Record<string, arrow.Vector> = {};
       for (let i = 0; i < fields.length; i++) {
-        columnDict[fields[i]!.name] = columns[i]!;
+        columnDict[fields[i].name] = columns[i]!;
       }
       const tempTable = new arrow.Table(columnDict);
 
@@ -176,7 +176,9 @@ export class ArrowSerializer {
         // Matches Python: if field.metadata and b"shape" in field.metadata:
         if (field.metadata?.has('shape')) {
           const shape = JSON.parse(field.metadata.get('shape')!);
+          console.log(`📐 Column "${name}" shape:`, shape, 'flattened length:', arr.length);
           const reshaped = this.reshapeArray(arr, shape);
+          console.log(`📦 Reshaped "${name}" preview:`, JSON.stringify(reshaped).substring(0, 200));
           result[name] = reshaped;
         } else {
           result[name] = arr;
@@ -268,6 +270,45 @@ export class ArrowSerializer {
         for (let r = 0; r < rows; r++) {
           batch.push(arr.slice(idx, idx + cols));
           idx += cols;
+        }
+        result.push(batch);
+      }
+      return result;
+    }
+
+    if (shape.length === 4) {
+      const [batches, rows, cols, depth] = shape;
+      // When depth is 1 (single feature for quantiles/samples), unwrap to 3D
+      if (depth === 1) {
+        const result: number[][][] = [];
+        let idx = 0;
+        for (let b = 0; b < batches; b++) {
+          const batch: number[][] = [];
+          for (let r = 0; r < rows; r++) {
+            const row: number[] = [];
+            for (let c = 0; c < cols; c++) {
+              row.push(arr[idx]);
+              idx += 1;
+            }
+            batch.push(row);
+          }
+          result.push(batch);
+        }
+        return result;
+      }
+
+      // For depth > 1, keep as 4D
+      const result: number[][][][] = [];
+      let idx = 0;
+      for (let b = 0; b < batches; b++) {
+        const batch: number[][][] = [];
+        for (let r = 0; r < rows; r++) {
+          const row: number[][] = [];
+          for (let c = 0; c < cols; c++) {
+            row.push(arr.slice(idx, idx + depth));
+            idx += depth;
+          }
+          batch.push(row);
         }
         result.push(batch);
       }

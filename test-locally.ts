@@ -62,7 +62,7 @@ try {
       parameters: {}
     },
     'sk-test-key-123',
-    'https://api.faim.com'
+    'https://api.faim.it.com'
   );
 
   console.log('✅ Request built successfully:');

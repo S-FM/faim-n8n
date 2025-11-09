@@ -19,6 +19,7 @@ export {
   InferenceError,
   NetworkError,
   SerializationError,
+  DataProcessingError,
   ApiError,
 } from './errors/customErrors';
 export { ErrorHandler, ErrorResponse } from './errors/errorHandler';

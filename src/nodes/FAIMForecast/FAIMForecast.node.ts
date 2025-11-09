@@ -97,7 +97,7 @@ export class FAIMForecast implements INodeType {
     const results: INodeExecutionData[] = [];
 
     // Get credentials
-    const credentials = await this.getCredentials('faimApi') as { apiKey: string };
+    const credentials = await this.getCredentials('faimApi');
     if (!credentials?.apiKey) {
       throw new NodeOperationError(this.getNode(), 'FAIM API key is required');
     }
@@ -110,7 +110,7 @@ export class FAIMForecast implements INodeType {
 
     // Initialize client
     const client = new ForecastClient({
-      apiKey: credentials.apiKey,
+      apiKey: String(credentials.apiKey),
     });
 
     // Process each item

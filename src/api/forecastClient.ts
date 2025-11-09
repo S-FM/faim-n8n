@@ -1,15 +1,16 @@
 import axios, { AxiosError } from 'axios';
-import { FaimError, NetworkError } from '../errors/customErrors';
+import { FaimError, NetworkError, DataProcessingError } from '../errors/customErrors';
 import { ErrorHandler } from '../errors/errorHandler';
 import { RequestBuilder, ForecastRequest, ModelType, OutputType } from './requestBuilder';
 import { ShapeConverter } from '../data/shapeConverter';
+import { ShapeReshaper } from '../data/shapeReshaper';
 import { ArrowSerializer } from '../arrow/serializer';
 
 export interface ForecastResponse {
   forecast: {
-    point?: number[][][];
-    quantiles?: number[][][];
-    samples?: number[][][];
+    point?: unknown; // Shape depends on input format: 1D → number[], 2D → number[][], 3D → number[][][]
+    quantiles?: unknown; // Shape depends on input format: 1D → number[][], 2D → number[][][], 3D → number[][][][]
+    samples?: unknown; // Shape depends on input format: 1D → number[][], 2D → number[][][], 3D → number[][][][]
   };
   metadata: {
     modelName: string;
@@ -151,12 +152,50 @@ export class ForecastClient {
     // This is a placeholder that expects JSON response
     const responseData = this.parseResponse(response.data);
 
+    // Reshape outputs based on original input format
+    const inputFormat = req.data.inputFormat;
+    let reshapedPoint: unknown = undefined;
+    let reshapedQuantiles: unknown = undefined;
+    let reshapedSamples: unknown = undefined;
+
+    try {
+      if (responseData.point) {
+        console.log('🔄 Reshaping point forecast for input format:', inputFormat);
+        reshapedPoint = ShapeReshaper.reshapePointForecast(
+          responseData.point as number[][][],
+          inputFormat,
+        );
+      }
+
+      if (responseData.quantiles) {
+        console.log('🔄 Reshaping quantiles forecast for input format:', inputFormat);
+        reshapedQuantiles = ShapeReshaper.reshapeQuantilesForecast(
+          responseData.quantiles as number[][][][],
+          inputFormat,
+        );
+      }
+
+      if (responseData.samples) {
+        console.log('🔄 Reshaping samples forecast for input format:', inputFormat);
+        reshapedSamples = ShapeReshaper.reshapeSamplesForecast(
+          responseData.samples as number[][][][],
+          inputFormat,
+        );
+      }
+    } catch (reshapeError) {
+      const errorMsg = reshapeError instanceof Error ? reshapeError.message : String(reshapeError);
+      console.error('❌ Error reshaping forecast:', errorMsg);
+      throw new DataProcessingError(
+        `Failed to reshape forecast output: ${errorMsg}. This usually means the server returned data in an unexpected format. Please check your input data format and try again.`
+      );
+    }
+
     // Build response object with type assertions for unknown values
     return {
       forecast: {
-        point: (responseData.point as number[][][]) || undefined,
-        quantiles: (responseData.quantiles as number[][][]) || undefined,
-        samples: (responseData.samples as number[][][]) || undefined,
+        point: reshapedPoint,
+        quantiles: reshapedQuantiles,
+        samples: reshapedSamples,
       },
       metadata: {
         modelName: (responseData.model_name as string) || req.model,

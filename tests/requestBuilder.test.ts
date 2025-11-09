@@ -7,9 +7,10 @@ describe('RequestBuilder', () => {
     sequenceLength: 5,
     features: 1,
     x: [[[1], [2], [3], [4], [5]]],
+    inputFormat: '1d' as const,
   };
 
-  const baseUrl = 'https://api.faim.com';
+  const baseUrl = 'https://api.faim.it.com';
   const apiKey = 'sk-test-key-123';
 
   describe('build', () => {
@@ -27,7 +28,7 @@ describe('RequestBuilder', () => {
         baseUrl,
       );
 
-      expect(request.url).toBe('https://api.faim.com/v1/ts/forecast/chronos2/1');
+      expect(request.url).toBe('https://api.faim.it.com/v1/ts/forecast/chronos2/1');
       expect(request.headers['Authorization']).toBe('Bearer sk-test-key-123');
       expect(request.headers['Content-Type']).toContain('application/vnd.apache.arrow.stream');
       expect(request.body).toBeInstanceOf(Uint8Array);
@@ -43,14 +44,14 @@ describe('RequestBuilder', () => {
           outputType: 'quantiles',
           parameters: {
             scale_factor: 1.5,
-            prediction_type: 'mean',
+            prediction_type: 'quantiles',
           },
         },
         apiKey,
         baseUrl,
       );
 
-      expect(request.url).toBe('https://api.faim.com/v1/ts/forecast/flowstate/1');
+      expect(request.url).toBe('https://api.faim.it.com/v1/ts/forecast/flowstate/1');
       expect(request.headers['Authorization']).toBe('Bearer sk-test-key-123');
       expect(request.body).toBeInstanceOf(Uint8Array);
     });
