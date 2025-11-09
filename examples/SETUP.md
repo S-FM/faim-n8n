@@ -2,15 +2,7 @@
 
 ## 5-Minute Setup
 
-### Step 1: Create Environment Variables
-Create `.env` file in your n8n project root:
-```bash
-FAIM_API_KEY=your_api_key_here
-GOOGLE_SHEETS_ID=1abc...xyz  # Copy from your Google Sheet URL
-GOOGLE_SHEETS_OAUTH=your_oauth_token
-```
-
-### Step 2: Setup Google Sheets
+### Step 1: Setup Google Sheets
 1. Create new Google Sheet
 2. Add two sheets:
    - Tab 1: `Daily_SKU_Forecasts` with headers:
@@ -58,11 +50,12 @@ curl -X POST http://localhost:5678/api/v1/workflows/import \
 
 ## Deployment Checklist
 
-- [ ] FAIM API key configured and tested
-- [ ] Google Sheets OAuth2 authenticated
-- [ ] Google Sheet with correct sheet names created
-- [ ] Environment variables set (`FAIM_API_KEY`, `GOOGLE_SHEETS_ID`)
+- [ ] FAIM API key configured in n8n Credentials
+- [ ] Google Sheets OAuth2 authenticated in n8n Credentials
+- [ ] Google Sheet created with correct sheet names (`Daily_SKU_Forecasts`, `Daily_Summary`)
+- [ ] Sheet ID configured in Google Sheets node
 - [ ] Workflow imported successfully
+- [ ] Credentials linked to workflow nodes
 - [ ] Test execution completes without errors
 - [ ] Data appears in Google Sheets
 - [ ] (Optional) Schedule trigger configured for production
@@ -135,9 +128,9 @@ Date       | Total_Quantity | SKU_Count | Day
 
 | Issue | Solution |
 |-------|----------|
-| "FAIM_API_KEY not found" | Check .env file exists and `source .env` before running |
-| "Spreadsheet not found" | Verify `GOOGLE_SHEETS_ID` matches URL exactly |
-| "Authentication failed" | Re-authenticate Google OAuth2 credentials |
+| "FAIM credential not found" | Go to Workflow → Credentials → Add FAIM API credential with your API key |
+| "Spreadsheet not found" | Verify Sheet ID is correct in the Google Sheets node parameters |
+| "Authentication failed" | Go to Workflow → Credentials → Re-authenticate Google Sheets OAuth2 |
 | "Empty data in Sheets" | Check Node 2 output has 1095 rows of mock data |
 | "API timeout" | Increase timeout in FAIM node parameters to 60s |
 
