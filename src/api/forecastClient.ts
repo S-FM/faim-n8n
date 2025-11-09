@@ -54,9 +54,9 @@ export class ForecastClient {
 
   constructor(config: ClientConfig) {
     this.apiKey = config.apiKey;
-    this.baseUrl = config.baseUrl || 'https://api.faim.it.com';
-    this.timeoutMs = config.timeoutMs || 30000;
-    this.maxRetries = config.maxRetries || 3;
+    this.baseUrl = config.baseUrl ?? 'https://api.faim.it.com';
+    this.timeoutMs = config.timeoutMs ?? 30000;
+    this.maxRetries = config.maxRetries ?? 3;
   }
 
   /**
@@ -121,30 +121,12 @@ export class ForecastClient {
     // Build request
     const builtReq = RequestBuilder.build(req, this.apiKey, this.baseUrl);
 
-    console.log('🔵 Sending request to:', builtReq.url);
-    console.log('📤 Request headers:', builtReq.headers);
-    console.log('📊 Request body size:', builtReq.body.length, 'bytes');
-
     // Execute HTTP request
     const response = await axios.post(builtReq.url, builtReq.body, {
       headers: builtReq.headers,
       timeout: this.timeoutMs,
       responseType: 'arraybuffer',
     });
-
-    console.log('✅ API Response status:', response.status);
-    console.log('📦 API Response data type:', typeof response.data);
-    console.log('📦 API Response data size:', response.data?.length || 'unknown');
-    if (response.data instanceof Uint8Array || response.data instanceof ArrayBuffer) {
-      const decoder = new TextDecoder();
-      const dataBytes = response.data instanceof ArrayBuffer ? new Uint8Array(response.data) : response.data;
-      const preview = decoder.decode(dataBytes.slice(0, 500));
-      console.log('📄 Response preview:', preview);
-    } else if (typeof response.data === 'string') {
-      console.log('📄 Response text:', response.data.substring(0, 500));
-    } else {
-      console.log('📄 Response data:', response.data);
-    }
 
     const durationMs = Date.now() - startTime;
 
@@ -159,24 +141,21 @@ export class ForecastClient {
     let reshapedSamples: unknown = undefined;
 
     try {
-      if (responseData.point) {
-        console.log('🔄 Reshaping point forecast for input format:', inputFormat);
+      if (typeof responseData.point !== 'undefined' && responseData.point !== null) {
         reshapedPoint = ShapeReshaper.reshapePointForecast(
           responseData.point as number[][][],
           inputFormat,
         );
       }
 
-      if (responseData.quantiles) {
-        console.log('🔄 Reshaping quantiles forecast for input format:', inputFormat);
+      if (typeof responseData.quantiles !== 'undefined' && responseData.quantiles !== null) {
         reshapedQuantiles = ShapeReshaper.reshapeQuantilesForecast(
           responseData.quantiles as number[][][][],
           inputFormat,
         );
       }
 
-      if (responseData.samples) {
-        console.log('🔄 Reshaping samples forecast for input format:', inputFormat);
+      if (typeof responseData.samples !== 'undefined' && responseData.samples !== null) {
         reshapedSamples = ShapeReshaper.reshapeSamplesForecast(
           responseData.samples as number[][][][],
           inputFormat,
@@ -233,23 +212,19 @@ export class ForecastClient {
         // Deserialize Arrow stream
         const { arrays, metadata } = ArrowSerializer.deserialize(data);
 
-        console.log('✅ Arrow deserialized successfully');
-        console.log('📊 Response arrays:', Object.keys(arrays));
-        console.log('📋 Response metadata:', metadata);
-
         // Transform Arrow arrays into forecast response format
         const response: Record<string, unknown> = {
           ...metadata, // Include all metadata (model_name, cost_amount, etc.)
         };
 
         // Map array outputs based on output_type
-        if (arrays['point']) {
+        if (typeof arrays['point'] !== 'undefined' && arrays['point'] !== null) {
           response.point = arrays['point'];
         }
-        if (arrays['quantiles']) {
+        if (typeof arrays['quantiles'] !== 'undefined' && arrays['quantiles'] !== null) {
           response.quantiles = arrays['quantiles'];
         }
-        if (arrays['samples']) {
+        if (typeof arrays['samples'] !== 'undefined' && arrays['samples'] !== null) {
           response.samples = arrays['samples'];
         }
 
@@ -258,7 +233,7 @@ export class ForecastClient {
 
       // Fallback: try JSON parsing
       if (typeof data === 'string') {
-        return JSON.parse(data);
+        return JSON.parse(data) as Record<string, unknown>;
       }
 
       // Return as-is if already an object
@@ -268,25 +243,17 @@ export class ForecastClient {
 
       throw new Error('Unable to parse response: unsupported data type');
     } catch (error) {
-      console.error('❌ Error parsing API response:', error);
-      console.error('Raw data type:', typeof data);
-
-      let extractedMetadata: Record<string, unknown> = {};
-
       // Try to extract metadata from compressed Arrow response
       if (data instanceof Uint8Array) {
         try {
-          console.error('Raw data length:', data.length);
           const decoder = new TextDecoder();
           const fullText = decoder.decode(data);
-          console.error('Raw data preview:', fullText.substring(0, 500));
 
           // Try to find JSON metadata in the response
           // Arrow IPC format includes schema metadata
           const jsonMatch = fullText.match(/\{"[^}]*":[^}]*\}/);
-          if (jsonMatch) {
-            extractedMetadata = JSON.parse(jsonMatch[0]);
-            console.log('✅ Extracted metadata from compressed response:', extractedMetadata);
+          if (jsonMatch !== null && jsonMatch.length > 0) {
+            const extractedMetadata = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
 
             // Return partial response with metadata and dummy forecast data
             return {
@@ -295,8 +262,8 @@ export class ForecastClient {
               _compressionWarning: 'Response data is compressed. Apache Arrow JS v14.x does not support zstd decompression. Use Python SDK or request uncompressed response from backend.',
             };
           }
-        } catch (metadataError) {
-          console.error('Could not extract metadata from response:', metadataError);
+        } catch {
+          // Continue to throw error below
         }
       }
 

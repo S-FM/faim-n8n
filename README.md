@@ -2,10 +2,7 @@
 
 Generate high-quality time-series forecasts using **FAIM** (Fast AI for Models) in n8n workflows.
 
-Supports multiple state-of-the-art forecasting models:
-- **Chronos 2.0** - Large language model for accurate forecasting
-- **FlowState** - State-space model for flexible-length series
-- **TiRex** - Transformer-based time series forecasting
+Uses the state-of-the-art **Chronos 2.0** large language model for accurate forecasting.
 
 ## Installation
 
@@ -33,7 +30,7 @@ Sign up at [faim.ai](https://faim.ai) to get your API key.
 
 1. Add a **FAIM Forecast** node to your workflow
 2. Select credentials
-3. Choose model and configure parameters
+3. Configure parameters (horizon, output type, quantiles)
 4. Connect time-series data
 
 ## Input Format
@@ -80,53 +77,28 @@ Converted to shape: `(batch=1, sequence=3, features=2)`
 ```
 Shape: `(batch=2, sequence=2, features=2)`
 
-## Models & Parameters
+## Node Parameters
 
-### Chronos 2.0
+### Required Parameters
 
-Advanced forecasting using large language models.
+- **Input Data** - Time-series data as JSON array or n8n expression
+- **Forecast Horizon** - Number of future steps to forecast (1-1000)
 
-**Parameters:**
-- **Quantiles** (optional, for quantiles output): JSON array of quantile levels
+### Optional Parameters
+
+- **Output Type** - `point` (default) or `quantiles`
+- **Quantiles** - JSON array of quantile levels (for quantiles output)
   ```json
   [0.1, 0.5, 0.9]  // 10th, 50th (median), 90th percentile
   ```
 
-**Example:**
+### Configuration Example
+
 ```
-Model: Chronos 2.0
+Input Data: {{ $json.timeSeries }}
 Horizon: 24
-Output: Quantiles
+Output Type: Quantiles
 Quantiles: [0.1, 0.5, 0.9]
-```
-
-### FlowState
-
-Flexible state-space model for various time-series characteristics.
-
-**Parameters:**
-- **Scale Factor** (optional): Normalization scale (number)
-- **Prediction Type** (optional): `mean` or `median`
-
-**Example:**
-```
-Model: FlowState
-Horizon: 12
-Output: Point
-Prediction Type: median
-```
-
-### TiRex
-
-Transformer-based model for capturing complex patterns.
-
-**No additional parameters required.**
-
-**Example:**
-```
-Model: TiRex
-Horizon: 48
-Output: Point
 ```
 
 ## Output Format
@@ -213,13 +185,6 @@ Data → FAIM Forecast (Chronos2, quantiles) → Set (extract quantiles) → Vis
 Input: Time series
 Output: Confidence intervals (10th, 50th, 90th percentile)
 
-### Example 3: Multiple Models Comparison
-
-```
-Data → Split → [Chronos2, FlowState, TiRex] → Merge → Compare metrics
-```
-
-Compare forecast quality across models.
 
 ### Example 4: Batch Processing
 
@@ -234,14 +199,12 @@ Forecast multiple time-series in single batch request (more efficient).
 ### Node Parameters
 
 **Required:**
-- `model`: Model to use (chronos2, flowstate, tirex)
 - `inputData`: Time-series data array
 - `horizon`: Forecast steps (1-1000)
 
 **Optional:**
-- `modelVersion`: Model version (default: "1")
-- `outputType`: point | quantiles | samples
-- Model-specific parameters (varies by model)
+- `outputType`: `point` (default) | `quantiles`
+- `quantiles`: Quantile levels for quantiles output (e.g., [0.1, 0.5, 0.9])
 
 ### Client Configuration
 
@@ -294,10 +257,9 @@ const response = await client.forecast(
 2. **Smaller Horizons**: Longer forecasts are more expensive
    - Use 24-48 steps instead of 365 if possible
 
-3. **Model Selection**: Different models have different cost/accuracy trade-offs
-   - Chronos2: Best accuracy, higher cost
-   - FlowState: Good balance, lower cost
-   - TiRex: Fast, competitive accuracy
+3. **Output Type**: Point forecasts are cheaper than quantiles
+   - Use `point` output type for basic forecasts
+   - Use `quantiles` when you need confidence intervals
 
 4. **Caching**: Store results for repeated queries
    - Avoid re-forecasting same data

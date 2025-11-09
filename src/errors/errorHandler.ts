@@ -12,23 +12,27 @@ export interface ErrorResponse {
  */
 export class ErrorHandler {
   static handleApiError(statusCode: number, data: unknown): FaimError {
-    console.log(`\n❌ API Error Response (Status ${statusCode}):`);
-    console.log('Data type:', typeof data);
-    console.log('Data value:', data);
-
     // Try to parse as ErrorResponse
     if (typeof data === 'object' && data !== null) {
       const response = data as Record<string, unknown>;
-      const errorCode = String(response.error_code || 'UNKNOWN_ERROR');
-      const message = String(response.message || 'An error occurred');
-      const detail = response.detail ? String(response.detail) : undefined;
+      const errorCode = String(
+        (typeof response.error_code !== 'undefined' && response.error_code !== null)
+          ? response.error_code
+          : 'UNKNOWN_ERROR'
+      );
+      const message = String(
+        (typeof response.message !== 'undefined' && response.message !== null)
+          ? response.message
+          : 'An error occurred'
+      );
+      const detail = (typeof response.detail !== 'undefined' && response.detail !== null)
+        ? String(response.detail)
+        : undefined;
 
-      console.log(`Error code: ${errorCode}, Message: ${message}`);
       return new ApiError(errorCode, message, statusCode, detail);
     }
 
     // Fallback for non-JSON responses
-    console.log(`Falling back to status code handler for ${statusCode}`);
     return this.handleStatusCode(statusCode);
   }
 

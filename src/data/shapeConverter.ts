@@ -217,7 +217,7 @@ export class ShapeConverter {
     }
     if (typeof data === 'string') {
       try {
-        const parsed = JSON.parse(data);
+        const parsed: unknown = JSON.parse(data);
         if (Array.isArray(parsed)) return parsed;
       } catch {
         // Not JSON

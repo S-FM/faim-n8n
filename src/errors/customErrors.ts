@@ -103,8 +103,9 @@ export class ApiError extends FaimError {
     detail?: string,
   ) {
     const retryable = isRetryableErrorCode(errorCode);
+    const detailSuffix = (typeof detail === 'string' && detail.length > 0) ? ` - ${detail}` : '';
     super(
-      `[${errorCode}] ${message}${detail ? ` - ${detail}` : ''}`,
+      `[${errorCode}] ${message}${detailSuffix}`,
       errorCode,
       statusCode,
       retryable,

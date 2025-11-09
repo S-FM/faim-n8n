@@ -93,7 +93,7 @@ export class FAIMForecast implements INodeType {
 
     // Get credentials
     const credentials = await this.getCredentials('faimApi');
-    if (!credentials?.apiKey) {
+    if (typeof credentials === 'undefined' || credentials === null || typeof credentials.apiKey !== 'string') {
       throw new NodeOperationError(this.getNode(), 'FAIM API key is required');
     }
 
@@ -117,7 +117,7 @@ export class FAIMForecast implements INodeType {
         // Parse string input if needed
         if (typeof inputData === 'string') {
           try {
-            inputData = JSON.parse(inputData);
+            inputData = JSON.parse(inputData) as unknown;
           } catch {
             throw new NodeOperationError(
               this.getNode(),
@@ -167,10 +167,6 @@ export class FAIMForecast implements INodeType {
           errorMessage = ErrorHandler.getUserMessage(error);
         } else if (error instanceof Error) {
           errorMessage = `${error.name}: ${error.message}`;
-          // Include stack trace for debugging
-          if (error.stack) {
-            console.error('Full error stack:', error.stack);
-          }
         } else {
           errorMessage = String(error);
         }

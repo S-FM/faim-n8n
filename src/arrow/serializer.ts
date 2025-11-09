@@ -2,7 +2,7 @@ import * as arrow from 'apache-arrow';
 import { SerializationError } from '../errors/customErrors';
 
 export interface ArrowData {
-  arrays: Record<string, any>;
+  arrays: Record<string, number[] | number[][] | number[][][] | number[][][][]>;
   metadata: Record<string, unknown>;
 }
 
@@ -23,7 +23,7 @@ export class ArrowSerializer {
    * 4. Create RecordBatch with schema and vectors
    * 5. Write to IPC stream format using RecordBatchStreamWriter
    */
-  static serialize(arrays: Record<string, any>, metadata?: Record<string, unknown>): Uint8Array {
+  static serialize(arrays: Record<string, number[] | number[][] | number[][][]>, metadata?: Record<string, unknown>): Uint8Array {
     try {
       const fields: arrow.Field[] = [];
       const columns: arrow.Vector[] = [];
@@ -36,7 +36,7 @@ export class ArrowSerializer {
       }
 
       for (const name of sortedKeys) {
-        let arr = arrays[name];
+        let arr: number[] | number[][] | number[][][] = arrays[name];
 
         // Skip None/undefined values (optional arrays)
         if (arr === null || arr === undefined) {
@@ -47,10 +47,11 @@ export class ArrowSerializer {
         const shape = this.getArrayShape(arr);
         if (shape.length === 1) {
           // 1D -> reshape to (1, length, 1)
-          arr = [[[...arr]]];
+          const arr1d = arr as number[];
+          arr = [arr1d.map(v => [v])];
         } else if (shape.length === 2) {
           // 2D -> reshape to (1, rows, cols)
-          arr = [arr];
+          arr = [arr as number[][]];
         }
         // 3D stays as-is
 
@@ -100,18 +101,17 @@ export class ArrowSerializer {
       const fieldsWithMetadata = tempTable.schema.fields.map((tempField, i) => {
         // Find our original field with metadata for this position
         const originalField = fields[i];
-        if (originalField && originalField.name === tempField.name) {
+        if (typeof originalField !== 'undefined' && originalField.name === tempField.name) {
           // Use our field WITH metadata (same name and type as inferred field)
           return originalField;
-        } else {
-          // Find by name
-          const matchingField = fields.find(f => f.name === tempField.name);
-          if (matchingField) {
-            return matchingField;
-          }
-          // Fallback: shouldn't happen
-          return tempField;
         }
+        // Find by name
+        const matchingField = fields.find(f => f.name === tempField.name);
+        if (typeof matchingField !== 'undefined') {
+          return matchingField;
+        }
+        // Fallback: shouldn't happen
+        return tempField;
       });
 
       // Create final schema with our fields (that have metadata) and schema metadata
@@ -121,7 +121,6 @@ export class ArrowSerializer {
       const finalTable = new arrow.Table(finalSchema, tempTable.batches);
       const ipcBuffer = arrow.tableToIPC(finalTable, 'stream');
 
-      console.log(`✅ Arrow IPC serialized: ${ipcBuffer.length} bytes`);
       return ipcBuffer;
     } catch (error) {
       throw new SerializationError(
@@ -145,21 +144,10 @@ export class ArrowSerializer {
       // Matches Python: reader = pa.ipc.open_stream(pa.py_buffer(arrow_bytes))
       // Use tableFromIPC which gives us a Table with metadata preserved
       // Note: Apache JS tableFromIPC may not support all compression codecs
-      let table: arrow.Table;
-      try {
-        table = arrow.tableFromIPC(buffer);
-      } catch (compressionError) {
-        // If compression is not supported, log warning and try alternative approach
-        if ((compressionError as Error).message.includes('compression')) {
-          console.warn('⚠️ Arrow compression not fully supported, attempting alternative deserialization');
-          // For now, just rethrow - backend should ideally not compress or use supported codec
-          throw compressionError;
-        }
-        throw compressionError;
-      }
+      const table: arrow.Table = arrow.tableFromIPC(buffer);
 
       // Extract arrays with shape reconstruction
-      const result: Record<string, any> = {};
+      const result: Record<string, number[] | number[][] | number[][][] | number[][][][]> = {};
 
       for (let i = 0; i < table.numCols; i++) {
         const column = table.getChildAt(i);
@@ -175,11 +163,14 @@ export class ArrowSerializer {
         // Reconstruct original shape from field metadata
         // Matches Python: if field.metadata and b"shape" in field.metadata:
         if (field.metadata?.has('shape')) {
-          const shape = JSON.parse(field.metadata.get('shape')!);
-          console.log(`📐 Column "${name}" shape:`, shape, 'flattened length:', arr.length);
-          const reshaped = this.reshapeArray(arr, shape);
-          console.log(`📦 Reshaped "${name}" preview:`, JSON.stringify(reshaped).substring(0, 200));
-          result[name] = reshaped;
+          const shapeMetadata = field.metadata.get('shape');
+          if (typeof shapeMetadata === 'string') {
+            const shape = JSON.parse(shapeMetadata) as number[];
+            const reshaped = this.reshapeArray(arr, shape);
+            result[name] = reshaped;
+          } else {
+            result[name] = arr;
+          }
         } else {
           result[name] = arr;
         }
@@ -189,7 +180,10 @@ export class ArrowSerializer {
       // Matches Python: if table.schema.metadata and b"user_meta" in table.schema.metadata:
       let userMetadata: Record<string, unknown> = {};
       if (table.schema.metadata?.has('user_meta')) {
-        userMetadata = JSON.parse(table.schema.metadata.get('user_meta')!);
+        const userMetaString = table.schema.metadata.get('user_meta');
+        if (typeof userMetaString === 'string') {
+          userMetadata = JSON.parse(userMetaString) as Record<string, unknown>;
+        }
       }
 
       return {
@@ -246,8 +240,7 @@ export class ArrowSerializer {
   /**
    * Reshape 1D array back to original shape
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private static reshapeArray(arr: number[], shape: number[]): any {
+  private static reshapeArray(arr: number[], shape: number[]): number[] | number[][] | number[][][] | number[][][][] {
     if (shape.length === 1) {
       return arr;
     }
