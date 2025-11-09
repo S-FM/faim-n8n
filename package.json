@@ -34,8 +34,15 @@
     "chronos2",
     "time-series-forecasting"
   ],
-  "author": "FAIM Team",
+  "author": {
+    "name": "FAIM Team",
+    "email": "andrei.chernov@faim.it.com"
+  },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FAIMGroup/faim-n8n"
+  },
   "packageManager": "pnpm@10.20.0",
   "peerDependencies": {
     "n8n-core": "^1.0.0",
