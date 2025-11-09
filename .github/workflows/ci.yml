@@ -17,14 +17,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install pnpm
-      run: npm install -g pnpm
-
     - name: Setup Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'pnpm'
+
+    - name: Enable Corepack and prepare pnpm
+      run: corepack enable && corepack prepare pnpm@10.20.0 --activate
 
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
@@ -35,8 +35,8 @@ jobs:
     - name: Build
       run: pnpm run build
 
-    - name: Run tests
-      run: pnpm run test -- --coverage
+    - name: Run tests with coverage
+      run: pnpm run test:coverage
 
     - name: Upload coverage
       uses: codecov/codecov-action@v3
@@ -57,15 +57,15 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install pnpm
-      run: npm install -g pnpm
-
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20.x'
         cache: 'pnpm'
         registry-url: 'https://registry.npmjs.org'
+
+    - name: Enable Corepack and prepare pnpm
+      run: corepack enable && corepack prepare pnpm@10.20.0 --activate
 
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
