@@ -34,24 +34,23 @@ describe('RequestBuilder', () => {
       expect(request.body).toBeInstanceOf(Uint8Array);
     });
 
-    it('should build valid request for flowstate model with parameters', () => {
+    it('should build valid request for chronos2 with quantiles', () => {
       const request = RequestBuilder.build(
         {
-          model: 'flowstate',
+          model: 'chronos2',
           modelVersion: '1',
           data: normalizedData,
           horizon: 24,
           outputType: 'quantiles',
           parameters: {
-            scale_factor: 1.5,
-            prediction_type: 'quantiles',
+            quantiles: [0.1, 0.5, 0.9],
           },
         },
         apiKey,
         baseUrl,
       );
 
-      expect(request.url).toBe('https://api.faim.it.com/v1/ts/forecast/flowstate/1');
+      expect(request.url).toBe('https://api.faim.it.com/v1/ts/forecast/chronos2/1');
       expect(request.headers['Authorization']).toBe('Bearer sk-test-key-123');
       expect(request.body).toBeInstanceOf(Uint8Array);
     });

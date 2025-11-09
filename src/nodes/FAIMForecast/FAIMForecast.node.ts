@@ -37,14 +37,9 @@ export class FAIMForecast implements INodeType {
       {
         displayName: 'Model',
         name: 'model',
-        type: 'options',
+        type: 'hidden',
         default: 'chronos2',
-        description: 'Forecast model to use',
-        options: [
-          { name: 'Chronos 2.0', value: 'chronos2' },
-          { name: 'FlowState', value: 'flowstate' },
-          { name: 'TiRex', value: 'tirex' },
-        ],
+        description: 'Forecast model (Chronos 2.0)',
       },
       {
         displayName: 'Input Data',

@@ -2,7 +2,7 @@ import { ValidationError } from '../errors/customErrors';
 import { ArrowSerializer } from '../arrow/serializer';
 import { NormalizedData } from '../data/shapeConverter';
 
-export type ModelType = 'flowstate' | 'chronos2' | 'tirex';
+export type ModelType = 'chronos2';
 export type OutputType = 'point' | 'quantiles' | 'samples';
 
 export interface ForecastRequest {
@@ -24,7 +24,7 @@ export interface BuiltRequest {
  * Builds Arrow-formatted requests for FAIM forecast API
  */
 export class RequestBuilder {
-  private static readonly VALID_MODELS = ['flowstate', 'chronos2', 'tirex'];
+  private static readonly VALID_MODELS = ['chronos2'];
   private static readonly VALID_OUTPUT_TYPES = ['point', 'quantiles', 'samples'];
   private static readonly MIN_HORIZON = 1;
   private static readonly MAX_HORIZON = 1000;
@@ -70,26 +70,9 @@ export class RequestBuilder {
       compression: null, // Request uncompressed response from backend
     };
 
-    // Add model-specific parameters
-    switch (req.model) {
-      case 'flowstate':
-        if (req.parameters.scale_factor !== undefined) {
-          metadata.scale_factor = req.parameters.scale_factor;
-        }
-        if (req.parameters.prediction_type !== undefined) {
-          metadata.prediction_type = req.parameters.prediction_type;
-        }
-        break;
-
-      case 'chronos2':
-        if (req.outputType === 'quantiles' && req.parameters.quantiles !== undefined) {
-          metadata.quantiles = req.parameters.quantiles;
-        }
-        break;
-
-      case 'tirex':
-        // No additional parameters
-        break;
+    // Chronos2-specific parameters
+    if (req.outputType === 'quantiles' && req.parameters.quantiles !== undefined) {
+      metadata.quantiles = req.parameters.quantiles;
     }
 
     return metadata;
