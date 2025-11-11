@@ -354,10 +354,11 @@ $json.executionStats          // Performance metrics
 
 ## Dependencies
 
-### Production (3 core)
+### Production (1 core)
 - `apache-arrow` (v14.0.0) - Binary serialization format
-- `axios` (v1.6.0) - HTTP client with timeout/retry support
-- `pako` (v2.1.0) - Optional compression support
+
+### Built-in n8n Integration
+- n8n's `this.helpers.httpRequest` - HTTP client (built-in to n8n, no separate dependency)
 
 ### Development
 - `typescript` (5.0) - TypeScript compiler with strict mode

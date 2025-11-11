@@ -49,14 +49,11 @@
     "n8n-workflow": "^1.0.0"
   },
   "dependencies": {
-    "apache-arrow": "^14.0.0",
-    "axios": "^1.6.0",
-    "pako": "^2.1.0"
+    "apache-arrow": "^14.0.0"
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",
     "@types/node": "^20.0.0",
-    "@types/pako": "^2.0.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "eslint": "^8.0.0",

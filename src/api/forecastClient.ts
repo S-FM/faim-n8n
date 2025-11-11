@@ -1,4 +1,7 @@
-import axios, { AxiosError } from 'axios';
+import {
+  IExecuteFunctions,
+  IHttpRequestOptions,
+} from 'n8n-workflow';
 import { FaimError, NetworkError, DataProcessingError } from '../errors/customErrors';
 import { ErrorHandler } from '../errors/errorHandler';
 import { RequestBuilder, ForecastRequest, ModelType, OutputType } from './requestBuilder';
@@ -54,18 +57,21 @@ export interface ClientConfig {
 
 /**
  * FAIM Forecast API client with retry logic
+ * Uses n8n's httpRequest helper for HTTP requests
  */
 export class ForecastClient {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
+  private readonly n8nContext: IExecuteFunctions;
 
-  constructor(config: ClientConfig) {
+  constructor(config: ClientConfig, n8nContext: IExecuteFunctions) {
     this.apiKey = config.apiKey;
     this.baseUrl = config.baseUrl ?? 'https://api.faim.it.com';
     this.timeoutMs = config.timeoutMs ?? 30000;
     this.maxRetries = config.maxRetries ?? 3;
+    this.n8nContext = n8nContext;
   }
 
   /**
@@ -80,6 +86,7 @@ export class ForecastClient {
     parameters: Record<string, unknown> = {},
   ): Promise<ForecastResponse> {
     let lastError: FaimError | null = null;
+    let retryCount = 0;
 
     // Normalize input data
     const normalizedData = ShapeConverter.normalize(inputData);
@@ -95,7 +102,10 @@ export class ForecastClient {
           parameters,
         };
 
-        return await this.executeRequest(req);
+        const response = await this.executeRequest(req);
+        // Update retry count in execution stats
+        response.executionStats.retryCount = retryCount;
+        return response;
       } catch (error) {
         lastError = this.handleError(error);
 
@@ -114,6 +124,7 @@ export class ForecastClient {
         const jitter = Math.random() * 0.1 * baseDelay;
         const delayMs = baseDelay + jitter;
 
+        retryCount++;
         await this.sleep(delayMs);
       }
     }
@@ -122,7 +133,7 @@ export class ForecastClient {
   }
 
   /**
-   * Execute single API request
+   * Execute single API request using n8n's httpRequest helper
    */
   private async executeRequest(req: ForecastRequest): Promise<ForecastResponse> {
     const startTime = Date.now();
@@ -130,18 +141,24 @@ export class ForecastClient {
     // Build request
     const builtReq = RequestBuilder.build(req, this.apiKey, this.baseUrl);
 
-    // Execute HTTP request
-    const response = await axios.post(builtReq.url, builtReq.body, {
+    // Prepare n8n httpRequest options
+    const httpOptions: IHttpRequestOptions = {
+      method: 'POST',
+      url: builtReq.url,
       headers: builtReq.headers,
+      body: builtReq.body,
+      encoding: 'arraybuffer', // Equivalent to axios responseType: 'arraybuffer'
       timeout: this.timeoutMs,
-      responseType: 'arraybuffer',
-    });
+      returnFullResponse: false, // Return body directly
+    };
+
+    // Execute HTTP request using n8n helper
+    const response = (await this.n8nContext.helpers.httpRequest(httpOptions)) as Buffer;
 
     const durationMs = Date.now() - startTime;
 
-    // Parse response (simplified for now - in production would use Arrow deserializer)
-    // This is a placeholder that expects JSON response
-    const responseData = this.parseResponse(response.data);
+    // Parse response (response is a Buffer from n8n httpRequest with encoding: 'arraybuffer')
+    const responseData = this.parseResponse(response);
 
     // Reshape outputs based on original input format
     const inputFormat = req.data.inputFormat;
@@ -282,38 +299,75 @@ export class ForecastClient {
 
   /**
    * Handle errors and map to FaimError
+   * Works with n8n's httpRequest helper errors
    */
   private handleError(error: unknown): FaimError {
     if (error instanceof FaimError) {
       return error;
     }
 
-    if (axios.isAxiosError(error)) {
-      const axError = error as AxiosError;
-
-      if (!axError.response) {
-        return new NetworkError(
-          `Network error: ${axError.message}`,
-        );
-      }
-
-      // Convert buffer response to string for error parsing
-      let errorData: unknown = axError.response.data;
-      if (Buffer.isBuffer(axError.response.data)) {
-        try {
-          errorData = JSON.parse(axError.response.data.toString());
-        } catch {
-          errorData = { error_code: 'PARSE_ERROR', message: axError.response.data.toString() };
-        }
-      }
-
-      return ErrorHandler.handleApiError(
-        axError.response.status,
-        errorData,
-      );
-    }
-
     if (error instanceof Error) {
+      const errObj = error as unknown as Record<string, unknown>;
+
+      // Handle network errors (ETIMEDOUT, ECONNRESET, etc.)
+      const errorCode = errObj.code as string | undefined;
+      const networkErrorCodes = [
+        'ETIMEDOUT',
+        'ECONNRESET',
+        'ECONNREFUSED',
+        'ENOTFOUND',
+        'ENETUNREACH',
+        'EAI_AGAIN',
+        'ESOCKETTIMEDOUT',
+      ];
+
+      if (typeof errorCode === 'string' && networkErrorCodes.includes(errorCode)) {
+        return new NetworkError(`Network error: ${error.message}`);
+      }
+
+      // Handle HTTP errors from n8n httpRequest
+      // Note: n8n returns httpCode as a string!
+      const httpCode =
+        typeof errObj.httpCode === 'string' ? parseInt(errObj.httpCode, 10) : undefined;
+      const statusCode = errObj.statusCode as number | undefined;
+      const finalStatusCode =
+        typeof statusCode === 'number' ? statusCode : typeof httpCode === 'number' ? httpCode : undefined;
+
+      if (typeof finalStatusCode === 'number' && finalStatusCode > 0) {
+        // Try to extract error data from response
+        let errorData: unknown;
+        const responseObj = errObj.response as Record<string, unknown> | undefined;
+
+        if (responseObj !== undefined && responseObj !== null && typeof responseObj.body !== 'undefined') {
+          const bodyData = responseObj.body;
+          if (Buffer.isBuffer(bodyData)) {
+            try {
+              errorData = JSON.parse(bodyData.toString());
+            } catch {
+              errorData = {
+                error_code: 'PARSE_ERROR',
+                message: bodyData.toString(),
+              };
+            }
+          } else if (typeof bodyData === 'string') {
+            try {
+              errorData = JSON.parse(bodyData);
+            } catch {
+              errorData = { error_code: 'PARSE_ERROR', message: bodyData };
+            }
+          } else {
+            errorData = bodyData;
+          }
+        }
+
+        return ErrorHandler.handleApiError(finalStatusCode, errorData);
+      }
+
+      // Generic network/timeout error
+      if (error.message.includes('timeout') || error.message.includes('Timeout')) {
+        return new NetworkError(`Request timeout: ${error.message}`);
+      }
+
       return new NetworkError(error.message);
     }
 
