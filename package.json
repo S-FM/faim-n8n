@@ -1,6 +1,6 @@
 {
   "name": "@faim-group/n8n-nodes-faim",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "description": "n8n node for FAIM time-series forecast API",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -39,9 +39,10 @@
     "email": "andrei.chernov@faim.it.com"
   },
   "license": "MIT",
+  "homepage": "https://faim.it.com/",
   "repository": {
     "type": "git",
-    "url": "https://github.com/FAIMGroup/faim-n8n"
+    "url": "https://github.com/S-FM/faim-n8n"
   },
   "packageManager": "pnpm@10.20.0",
   "peerDependencies": {
