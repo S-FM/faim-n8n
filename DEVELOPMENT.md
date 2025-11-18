@@ -201,9 +201,9 @@ Current coverage status tracked in CI/CD.
 
 ### Production
 - **apache-arrow** (v14): Arrow IPC serialization
-- **axios** (v1.6): HTTP client
-- **pako** (v2.1): Optional compression support
-- **zstd-wasm** (v0.3): Zstd decompression (optional)
+
+### Built-in n8n Integration
+- **n8n's `this.helpers.httpRequest`**: HTTP client (built-in, no dependency)
 
 ### Development
 - **typescript**: Type checking

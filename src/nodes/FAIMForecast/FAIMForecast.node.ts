@@ -103,10 +103,13 @@ export class FAIMForecast implements INodeType {
     const horizon = this.getNodeParameter('horizon', 0) as number;
     const outputType = this.getNodeParameter('outputType', 0) as OutputType;
 
-    // Initialize client
-    const client = new ForecastClient({
-      apiKey: String(credentials.apiKey),
-    });
+    // Initialize client with n8n context for httpRequest helper
+    const client = new ForecastClient(
+      {
+        apiKey: String(credentials.apiKey),
+      },
+      this,
+    );
 
     // Process each item
     for (let i = 0; i < items.length; i++) {

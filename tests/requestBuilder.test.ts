@@ -30,8 +30,9 @@ describe('RequestBuilder', () => {
 
       expect(request.url).toBe('https://api.faim.it.com/v1/ts/forecast/chronos2/1');
       expect(request.headers['Authorization']).toBe('Bearer sk-test-key-123');
-      expect(request.headers['Content-Type']).toContain('application/vnd.apache.arrow.stream');
-      expect(request.body).toBeInstanceOf(Uint8Array);
+      expect(request.headers['Content-Type']).toBe('application/json');
+      expect(typeof request.body).toBe('string');
+      expect(request.body).toContain('"horizon":1');
     });
 
     it('should build valid request for chronos2 with quantiles', () => {
@@ -52,7 +53,8 @@ describe('RequestBuilder', () => {
 
       expect(request.url).toBe('https://api.faim.it.com/v1/ts/forecast/chronos2/1');
       expect(request.headers['Authorization']).toBe('Bearer sk-test-key-123');
-      expect(request.body).toBeInstanceOf(Uint8Array);
+      expect(typeof request.body).toBe('string');
+      expect(request.body).toContain('"horizon":24');
     });
 
     it('should validate horizon is within bounds', () => {
@@ -169,7 +171,8 @@ describe('RequestBuilder', () => {
 
       expect(request.url).toBe('https://api.faim.it.com/v1/ts/forecast/chronos2/1');
       expect(request.headers['Authorization']).toBe(`Bearer ${apiKey}`);
-      expect(request.body).toBeInstanceOf(Uint8Array);
+      expect(typeof request.body).toBe('string');
+      expect(request.body).toContain('0.25');
     });
 
     it('should support quantiles with minimal parameters (2-quantile)', () => {
@@ -189,7 +192,8 @@ describe('RequestBuilder', () => {
       );
 
       expect(request.url).toContain('/chronos2/');
-      expect(request.body).toBeInstanceOf(Uint8Array);
+      expect(typeof request.body).toBe('string');
+      expect(request.body).toContain('"horizon":5');
     });
 
     it('should build valid request for samples output type', () => {
@@ -208,7 +212,8 @@ describe('RequestBuilder', () => {
 
       expect(request.url).toBe('https://api.faim.it.com/v1/ts/forecast/chronos2/1');
       expect(request.headers['Authorization']).toBe('Bearer sk-test-key-123');
-      expect(request.body).toBeInstanceOf(Uint8Array);
+      expect(typeof request.body).toBe('string');
+      expect(request.body).toContain('"output_type":"samples"');
     });
 
     it('should accept quantiles as request parameter (backend validates range)', () => {
@@ -229,7 +234,8 @@ describe('RequestBuilder', () => {
       );
 
       expect(request.url).toContain('/chronos2/');
-      expect(request.body).toBeInstanceOf(Uint8Array);
+      expect(typeof request.body).toBe('string');
+      expect(request.body).toContain('0.5');
     });
 
     it('should handle large horizon with quantiles', () => {
@@ -249,7 +255,8 @@ describe('RequestBuilder', () => {
       );
 
       expect(request.url).toContain('/chronos2/');
-      expect(request.body).toBeInstanceOf(Uint8Array);
+      expect(typeof request.body).toBe('string');
+      expect(request.body).toContain('"horizon":1000');
     });
   });
 });

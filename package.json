@@ -1,6 +1,6 @@
 {
   "name": "@faim-group/n8n-nodes-faim",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "n8n node for FAIM time-series forecast API",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -34,22 +34,25 @@
     "chronos2",
     "time-series-forecasting"
   ],
-  "author": "FAIM Team",
+  "author": {
+    "name": "FAIM Team",
+    "email": "andrei.chernov@faim.it.com"
+  },
   "license": "MIT",
+  "homepage": "https://faim.it.com/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/S-FM/faim-n8n"
+  },
   "packageManager": "pnpm@10.20.0",
   "peerDependencies": {
     "n8n-core": "^1.0.0",
     "n8n-workflow": "^1.0.0"
   },
-  "dependencies": {
-    "apache-arrow": "^14.0.0",
-    "axios": "^1.6.0",
-    "pako": "^2.1.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/jest": "^29.5.0",
     "@types/node": "^20.0.0",
-    "@types/pako": "^2.0.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "eslint": "^8.0.0",

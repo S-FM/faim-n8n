@@ -1,5 +1,5 @@
 import { ValidationError } from '../errors/customErrors';
-import { ArrowSerializer } from '../arrow/serializer';
+import { JSONSerializer } from '../data/jsonSerializer';
 import { NormalizedData } from '../data/shapeConverter';
 
 export type ModelType = 'chronos2';
@@ -15,26 +15,25 @@ export interface ForecastRequest {
 }
 
 export interface BuiltRequest {
-  body: Uint8Array;
+  body: string; // JSON string
   headers: Record<string, string>;
   url: string;
 }
 
 /**
- * Builds Arrow-formatted requests for FAIM forecast API (n8n node mode)
+ * Builds JSON requests for FAIM forecast API (n8n node mode)
  *
  * The FAIM backend requires all requests in a specific format:
- * - Data: 3D array (batch, sequence, features) serialized to Arrow IPC format
+ * - Data: 3D array (batch, sequence, features) as JSON
  * - The n8n node restricts to univariate data: features must equal 1
- * - Metadata: JSON object containing horizon, output_type, and optional parameters
+ * - Payload: JSON object containing x, horizon, output_type, and optional parameters
  *
  * Request format:
  * POST /v1/ts/forecast/{model}/{version}
  * Authorization: Bearer {apiKey}
- * Content-Type: application/vnd.apache.arrow.stream
- * Accept-Encoding: identity (request uncompressed response)
+ * Content-Type: application/json
  *
- * Body: Arrow IPC binary stream
+ * Body: JSON payload with time series data and forecast parameters
  */
 export class RequestBuilder {
   private static readonly VALID_MODELS = ['chronos2'];
@@ -54,7 +53,7 @@ export class RequestBuilder {
    * @param req - Forecast request with normalized data
    * @param apiKey - FAIM API key for authorization
    * @param baseUrl - FAIM API base URL
-   * @returns Built request with Arrow-serialized body and headers
+   * @returns Built request with JSON body and headers
    * @throws ValidationError if any validation fails
    */
   static build(
@@ -68,14 +67,16 @@ export class RequestBuilder {
     this.validateOutputType(req.outputType);
     this.validateUnivariateData(req.data);
 
-    // Validate and build metadata
-    const metadata = this.buildMetadata(req);
+    // Build parameters for JSON payload
+    const parameters = this.buildParameters(req);
 
-    // Convert data to Arrow format
-    const arrays = this.prepareArrays(req);
-
-    // Serialize to Arrow IPC
-    const body = ArrowSerializer.serialize(arrays, metadata);
+    // Serialize to JSON
+    const body = JSONSerializer.serialize(
+      req.data,
+      req.horizon,
+      req.outputType,
+      parameters,
+    );
 
     // Build URL
     const url = `${baseUrl}/v1/ts/forecast/${req.model}/${req.modelVersion}`;
@@ -87,45 +88,33 @@ export class RequestBuilder {
   }
 
   /**
-   * Build metadata dict (stored in Arrow schema metadata)
+   * Build parameters for JSON payload
    */
-  private static buildMetadata(req: ForecastRequest): Record<string, unknown> {
-    const metadata: Record<string, unknown> = {
-      horizon: req.horizon,
-      output_type: req.outputType,
+  private static buildParameters(req: ForecastRequest): Record<string, unknown> {
+    const parameters: Record<string, unknown> = {
       compression: null, // Request uncompressed response from backend
     };
 
     // Chronos2-specific parameters
     if (req.outputType === 'quantiles' && req.parameters.quantiles !== undefined) {
-      metadata.quantiles = req.parameters.quantiles;
+      parameters.quantiles = req.parameters.quantiles;
     }
 
-    return metadata;
+    if (req.outputType === 'samples' && req.parameters.num_samples !== undefined) {
+      parameters.num_samples = req.parameters.num_samples;
+    }
+
+    return parameters;
   }
 
   /**
-   * Prepare data arrays in Arrow format
-   * Matches Python SDK format: pass 3D array x as-is
-   * Arrow serializer will handle flattening and shape metadata
-   */
-  private static prepareArrays(req: ForecastRequest): Record<string, number[] | number[][] | number[][][]> {
-    // Pass 3D array directly: ArrowSerializer will flatten and store shape metadata
-    // Shape: (batch, sequence, features)
-    return {
-      x: req.data.x,
-    };
-  }
-
-  /**
-   * Build HTTP headers
+   * Build HTTP headers for JSON request
    */
   private static buildHeaders(apiKey: string, contentLength: number): Record<string, string> {
     return {
       'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/vnd.apache.arrow.stream',
+      'Content-Type': 'application/json',
       'Content-Length': String(contentLength),
-      'Accept-Encoding': 'identity', // Request uncompressed response - Apache Arrow JS doesn't support zstd compression
     };
   }
 

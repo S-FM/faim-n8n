@@ -1,10 +1,13 @@
-import axios, { AxiosError } from 'axios';
+import {
+  IExecuteFunctions,
+  IHttpRequestOptions,
+} from 'n8n-workflow';
 import { FaimError, NetworkError, DataProcessingError } from '../errors/customErrors';
 import { ErrorHandler } from '../errors/errorHandler';
 import { RequestBuilder, ForecastRequest, ModelType, OutputType } from './requestBuilder';
 import { ShapeConverter } from '../data/shapeConverter';
 import { ShapeReshaper } from '../data/shapeReshaper';
-import { ArrowSerializer } from '../arrow/serializer';
+import { JSONSerializer } from '../data/jsonSerializer';
 
 /**
  * Forecast response from FAIM API (n8n node mode - univariate only)
@@ -54,18 +57,21 @@ export interface ClientConfig {
 
 /**
  * FAIM Forecast API client with retry logic
+ * Uses n8n's httpRequest helper for HTTP requests
  */
 export class ForecastClient {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
+  private readonly n8nContext: IExecuteFunctions;
 
-  constructor(config: ClientConfig) {
+  constructor(config: ClientConfig, n8nContext: IExecuteFunctions) {
     this.apiKey = config.apiKey;
     this.baseUrl = config.baseUrl ?? 'https://api.faim.it.com';
     this.timeoutMs = config.timeoutMs ?? 30000;
     this.maxRetries = config.maxRetries ?? 3;
+    this.n8nContext = n8nContext;
   }
 
   /**
@@ -80,6 +86,7 @@ export class ForecastClient {
     parameters: Record<string, unknown> = {},
   ): Promise<ForecastResponse> {
     let lastError: FaimError | null = null;
+    let retryCount = 0;
 
     // Normalize input data
     const normalizedData = ShapeConverter.normalize(inputData);
@@ -95,7 +102,10 @@ export class ForecastClient {
           parameters,
         };
 
-        return await this.executeRequest(req);
+        const response = await this.executeRequest(req);
+        // Update retry count in execution stats
+        response.executionStats.retryCount = retryCount;
+        return response;
       } catch (error) {
         lastError = this.handleError(error);
 
@@ -114,6 +124,7 @@ export class ForecastClient {
         const jitter = Math.random() * 0.1 * baseDelay;
         const delayMs = baseDelay + jitter;
 
+        retryCount++;
         await this.sleep(delayMs);
       }
     }
@@ -122,7 +133,7 @@ export class ForecastClient {
   }
 
   /**
-   * Execute single API request
+   * Execute single API request using n8n's httpRequest helper
    */
   private async executeRequest(req: ForecastRequest): Promise<ForecastResponse> {
     const startTime = Date.now();
@@ -130,18 +141,25 @@ export class ForecastClient {
     // Build request
     const builtReq = RequestBuilder.build(req, this.apiKey, this.baseUrl);
 
-    // Execute HTTP request
-    const response = await axios.post(builtReq.url, builtReq.body, {
+    // Prepare n8n httpRequest options for JSON response
+    const httpOptions: IHttpRequestOptions = {
+      method: 'POST',
+      url: builtReq.url,
       headers: builtReq.headers,
+      body: builtReq.body,
+      json: true, // Automatically parse JSON response
       timeout: this.timeoutMs,
-      responseType: 'arraybuffer',
-    });
+      returnFullResponse: false, // Return body directly
+    };
+
+    // Execute HTTP request using n8n helper
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const responseBody = await this.n8nContext.helpers.httpRequest(httpOptions);
 
     const durationMs = Date.now() - startTime;
 
-    // Parse response (simplified for now - in production would use Arrow deserializer)
-    // This is a placeholder that expects JSON response
-    const responseData = this.parseResponse(response.data);
+    // Parse response (n8n helper already parsed JSON due to json: true)
+    const responseData = this.parseJSONResponse(responseBody);
 
     // Reshape outputs based on original input format
     const inputFormat = req.data.inputFormat;
@@ -151,9 +169,16 @@ export class ForecastClient {
 
     try {
       if (typeof responseData.point !== 'undefined' && responseData.point !== null) {
-        const pointData = responseData.point as number[][][];
+        const pointData = responseData.point as number[][] | number[][][];
+        // Convert 2D point (FlowState/TiRex) to 3D format for reshaper
+        // 2D: [batch, horizon] → 3D: [batch, horizon, 1]
+        const point3D: number[][][] = JSONSerializer.isPoint3D(pointData)
+          ? (pointData)
+          : (pointData).map((batch) =>
+              batch.map((val) => [val])
+            );
         // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-        reshapedPoint = ShapeReshaper.reshapePointForecast(pointData, inputFormat);
+        reshapedPoint = ShapeReshaper.reshapePointForecast(point3D, inputFormat);
       }
 
       if (typeof responseData.quantiles !== 'undefined' && responseData.quantiles !== null) {
@@ -169,7 +194,6 @@ export class ForecastClient {
       }
     } catch (reshapeError) {
       const errorMsg = reshapeError instanceof Error ? reshapeError.message : String(reshapeError);
-      console.error('❌ Error reshaping forecast:', errorMsg);
       throw new DataProcessingError(
         `Failed to reshape forecast output: ${errorMsg}. This usually means the server returned data in an unexpected format. Please check your input data format and try again.`
       );
@@ -208,72 +232,70 @@ export class ForecastClient {
   }
 
   /**
-   * Parse Arrow IPC response
-   * Matches Python SDK deserialization
+   * Parse JSON response from FAIM API
+   * Handles both successful and error responses
    */
-  private parseResponse(data: unknown): Record<string, unknown> {
+  private parseJSONResponse(data: unknown): Record<string, unknown> {
     try {
-      // Expect Arrow IPC stream (binary Uint8Array)
-      if (data instanceof Uint8Array) {
-        // Deserialize Arrow stream
-        const { arrays, metadata } = ArrowSerializer.deserialize(data);
+      // Data should already be parsed by n8n's json: true option
+      // but handle different response types
+      let responseObj: unknown;
 
-        // Transform Arrow arrays into forecast response format
-        const response: Record<string, unknown> = {
-          ...metadata, // Include all metadata (model_name, cost_amount, etc.)
-        };
-
-        // Map array outputs based on output_type
-        if (typeof arrays['point'] !== 'undefined' && arrays['point'] !== null) {
-          response.point = arrays['point'];
-        }
-        if (typeof arrays['quantiles'] !== 'undefined' && arrays['quantiles'] !== null) {
-          response.quantiles = arrays['quantiles'];
-        }
-        if (typeof arrays['samples'] !== 'undefined' && arrays['samples'] !== null) {
-          response.samples = arrays['samples'];
-        }
-
-        return response;
-      }
-
-      // Fallback: try JSON parsing
       if (typeof data === 'string') {
-        return JSON.parse(data) as Record<string, unknown>;
+        responseObj = JSON.parse(data);
+      } else if (typeof data === 'object' && data !== null) {
+        responseObj = data;
+      } else {
+        throw new Error(`Unexpected response type: ${typeof data}`);
       }
 
-      // Return as-is if already an object
-      if (typeof data === 'object' && data !== null) {
-        return data as Record<string, unknown>;
+      // Check for error response
+      if (JSONSerializer.isError(responseObj)) {
+        const errorResp = responseObj;
+        const detailStr = typeof errorResp.detail === 'string' && errorResp.detail ? ` - ${errorResp.detail}` : '';
+        throw new NetworkError(
+          `API Error (${errorResp.error_code}): ${errorResp.message}${detailStr}`
+        );
       }
 
-      throw new Error('Unable to parse response: unsupported data type');
+      // Verify it's a successful response
+      if (!JSONSerializer.isSuccess(responseObj)) {
+        throw new Error('Invalid API response format: missing status, outputs, or metadata');
+      }
+
+      const jsonResp = responseObj;
+
+      // Transform outputs, handling model-specific point forecast shapes
+      const response: Record<string, unknown> = {
+        model_name: jsonResp.metadata.model_name,
+        model_version: jsonResp.metadata.model_version,
+        token_count: jsonResp.metadata.token_count,
+        transaction_id: jsonResp.metadata.transaction_id,
+        cost_amount: jsonResp.metadata.cost_amount,
+        cost_currency: jsonResp.metadata.cost_currency,
+      };
+
+      // Handle point forecast (varies by model: 2D or 3D)
+      if (typeof jsonResp.outputs.point !== 'undefined' && jsonResp.outputs.point !== null) {
+        response.point = jsonResp.outputs.point;
+      }
+
+      // Handle quantiles (always 4D)
+      if (typeof jsonResp.outputs.quantiles !== 'undefined' && jsonResp.outputs.quantiles !== null) {
+        response.quantiles = jsonResp.outputs.quantiles;
+      }
+
+      // Handle samples (always 4D)
+      if (typeof jsonResp.outputs.samples !== 'undefined' && jsonResp.outputs.samples !== null) {
+        response.samples = jsonResp.outputs.samples;
+      }
+
+      return response;
     } catch (error) {
-      // Try to extract metadata from compressed Arrow response
-      if (data instanceof Uint8Array) {
-        try {
-          const decoder = new TextDecoder();
-          const fullText = decoder.decode(data);
-
-          // Try to find JSON metadata in the response
-          // Arrow IPC format includes schema metadata
-          const jsonMatch = fullText.match(/\{"[^}]*":[^}]*\}/);
-          if (jsonMatch !== null && jsonMatch.length > 0) {
-            const extractedMetadata = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-
-            // Return partial response with metadata and dummy forecast data
-            return {
-              ...extractedMetadata,
-              point: [[[0]]], // Placeholder - actual data is in compressed response
-              _compressionWarning: 'Response data is compressed. Apache Arrow JS v14.x does not support zstd decompression. Use Python SDK or request uncompressed response from backend.',
-            };
-          }
-        } catch {
-          // Continue to throw error below
-        }
+      if (error instanceof FaimError) {
+        throw error;
       }
 
-      // If we got here and have no data to return, throw the error
       throw new NetworkError(
         `Failed to parse API response: ${error instanceof Error ? error.message : String(error)}`
       );
@@ -282,38 +304,75 @@ export class ForecastClient {
 
   /**
    * Handle errors and map to FaimError
+   * Works with n8n's httpRequest helper errors
    */
   private handleError(error: unknown): FaimError {
     if (error instanceof FaimError) {
       return error;
     }
 
-    if (axios.isAxiosError(error)) {
-      const axError = error as AxiosError;
-
-      if (!axError.response) {
-        return new NetworkError(
-          `Network error: ${axError.message}`,
-        );
-      }
-
-      // Convert buffer response to string for error parsing
-      let errorData: unknown = axError.response.data;
-      if (Buffer.isBuffer(axError.response.data)) {
-        try {
-          errorData = JSON.parse(axError.response.data.toString());
-        } catch {
-          errorData = { error_code: 'PARSE_ERROR', message: axError.response.data.toString() };
-        }
-      }
-
-      return ErrorHandler.handleApiError(
-        axError.response.status,
-        errorData,
-      );
-    }
-
     if (error instanceof Error) {
+      const errObj = error as unknown as Record<string, unknown>;
+
+      // Handle network errors (ETIMEDOUT, ECONNRESET, etc.)
+      const errorCode = errObj.code as string | undefined;
+      const networkErrorCodes = [
+        'ETIMEDOUT',
+        'ECONNRESET',
+        'ECONNREFUSED',
+        'ENOTFOUND',
+        'ENETUNREACH',
+        'EAI_AGAIN',
+        'ESOCKETTIMEDOUT',
+      ];
+
+      if (typeof errorCode === 'string' && networkErrorCodes.includes(errorCode)) {
+        return new NetworkError(`Network error: ${error.message}`);
+      }
+
+      // Handle HTTP errors from n8n httpRequest
+      // Note: n8n returns httpCode as a string!
+      const httpCode =
+        typeof errObj.httpCode === 'string' ? parseInt(errObj.httpCode, 10) : undefined;
+      const statusCode = errObj.statusCode as number | undefined;
+      const finalStatusCode =
+        typeof statusCode === 'number' ? statusCode : typeof httpCode === 'number' ? httpCode : undefined;
+
+      if (typeof finalStatusCode === 'number' && finalStatusCode > 0) {
+        // Try to extract error data from response
+        let errorData: unknown;
+        const responseObj = errObj.response as Record<string, unknown> | undefined;
+
+        if (responseObj !== undefined && responseObj !== null && typeof responseObj.body !== 'undefined') {
+          const bodyData = responseObj.body;
+          if (Buffer.isBuffer(bodyData)) {
+            try {
+              errorData = JSON.parse(bodyData.toString());
+            } catch {
+              errorData = {
+                error_code: 'PARSE_ERROR',
+                message: bodyData.toString(),
+              };
+            }
+          } else if (typeof bodyData === 'string') {
+            try {
+              errorData = JSON.parse(bodyData);
+            } catch {
+              errorData = { error_code: 'PARSE_ERROR', message: bodyData };
+            }
+          } else {
+            errorData = bodyData;
+          }
+        }
+
+        return ErrorHandler.handleApiError(finalStatusCode, errorData);
+      }
+
+      // Generic network/timeout error
+      if (error.message.includes('timeout') || error.message.includes('Timeout')) {
+        return new NetworkError(`Request timeout: ${error.message}`);
+      }
+
       return new NetworkError(error.message);
     }
 
@@ -322,8 +381,23 @@ export class ForecastClient {
 
   /**
    * Sleep helper for retry delays
+   * Creates an async delay by awaiting a resolved promise
    */
   private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return new Promise((resolve) => {
+      // Use a simple promise-based delay without setTimeout
+      // This approach is compatible with n8n's sandboxed environment
+      const deadline = Date.now() + ms;
+      const checkDelay = (): void => {
+        if (Date.now() >= deadline) {
+          resolve();
+        } else {
+          // Reschedule via promise chain to avoid blocking
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          Promise.resolve().then(checkDelay);
+        }
+      };
+      checkDelay();
+    });
   }
 }
