@@ -1,7 +1,6 @@
 // Export n8n node (required for n8n to load it)
 export { FAIMForecast } from './nodes/FAIMForecast/FAIMForecast.node';
-// Note: Credentials class is also named FAIMForecast (for n8n auto-discovery)
-// but it's a credential type, not a node type
+// Export credentials (same filename, different class for type safety)
 export { FAIMForecast as FAIMForecastCredentials } from './nodes/FAIMForecast/FAIMForecast.credentials';
 
 // Export public API

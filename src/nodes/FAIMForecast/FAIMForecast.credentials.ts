@@ -1,23 +1,44 @@
-import { ICredentialType } from 'n8n-workflow';
+import {
+	IAuthenticateGeneric,
+	ICredentialTestRequest,
+	ICredentialType,
+	INodeProperties,
+} from 'n8n-workflow';
 
-// Note: Class name must be 'FAIMForecast' for n8n's auto-discovery
-// (expects filename match for credentials)
 export class FAIMForecast implements ICredentialType {
-  name = 'faimApi';
-  displayName = 'FAIM API Key';
-  documentationUrl = 'https://faim.it.com/api-docs';
-  properties = [
-    {
-      displayName: 'API Key',
-      name: 'apiKey',
-      type: 'string' as const,
-      typeOptions: {
-        password: true,
-      },
-      default: '',
-      required: true,
-      placeholder: 'api_key_1_xxxxxxxxxxxxxxxxxxxxx',
-      description: 'API key for FAIM forecast service. Get one at https://faim.it.com',
-    },
-  ];
+	name = 'faimApi';
+	displayName = 'FAIM API';
+	icon = 'file:faim.png' as const;
+	documentationUrl = 'https://faim.it.com/api-docs';
+	properties: INodeProperties[] = [
+		{
+			displayName: 'API Key',
+			name: 'apiKey',
+			type: 'string',
+			typeOptions: {
+				password: true,
+			},
+			default: '',
+			required: true,
+			placeholder: 'api_key_1_xxxxxxxxxxxxxxxxxxxxx',
+			description: 'API key for FAIM forecast service. Get one at https://faim.it.com',
+		},
+	];
+
+	authenticate: IAuthenticateGeneric = {
+		type: 'generic',
+		properties: {
+			headers: {
+				Authorization: '=Bearer {{$credentials.apiKey}}',
+			},
+		},
+	};
+
+	test: ICredentialTestRequest = {
+		request: {
+			baseURL: 'https://api.faim.it.com',
+			url: '/v1/health',
+			method: 'GET',
+		},
+	};
 }
