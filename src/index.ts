@@ -1,7 +1,5 @@
 // Export n8n node (required for n8n to load it)
 export { FAIMForecast } from './nodes/FAIMForecast/FAIMForecast.node';
-// Export credentials (same filename, different class for type safety)
-export { FAIMForecast as FAIMForecastCredentials } from './nodes/FAIMForecast/FAIMForecast.credentials';
 
 // Export public API
 export { ForecastClient, ClientConfig, ForecastResponse } from './api/forecastClient';

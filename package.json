@@ -9,14 +9,14 @@
       "dist/nodes/FAIMForecast/FAIMForecast.node.js"
     ],
     "credentials": [
-      "dist/nodes/FAIMForecast/FAIMForecast.credentials.js"
+      "dist/credentials/FAIMForecast.credentials.js"
     ]
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc && cp src/nodes/FAIMForecast/faim.png dist/nodes/FAIMForecast/faim.png",
+    "build": "tsc && mkdir -p dist/nodes/FAIMForecast && cp src/nodes/FAIMForecast/faim.png dist/nodes/FAIMForecast/faim.png && cp -r dist/src/* dist/ && rm -rf dist/src",
     "dev": "tsc --watch",
     "test": "jest",
     "test:watch": "jest --watch",
