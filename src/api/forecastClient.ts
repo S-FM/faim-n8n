@@ -7,7 +7,7 @@ import { ErrorHandler } from '../errors/errorHandler';
 import { RequestBuilder, ForecastRequest, ModelType, OutputType } from './requestBuilder';
 import { ShapeConverter } from '../data/shapeConverter';
 import { ShapeReshaper } from '../data/shapeReshaper';
-import { ArrowSerializer } from '../arrow/serializer';
+import { JSONSerializer } from '../data/jsonSerializer';
 
 /**
  * Forecast response from FAIM API (n8n node mode - univariate only)
@@ -141,24 +141,25 @@ export class ForecastClient {
     // Build request
     const builtReq = RequestBuilder.build(req, this.apiKey, this.baseUrl);
 
-    // Prepare n8n httpRequest options
+    // Prepare n8n httpRequest options for JSON response
     const httpOptions: IHttpRequestOptions = {
       method: 'POST',
       url: builtReq.url,
       headers: builtReq.headers,
       body: builtReq.body,
-      encoding: 'arraybuffer', // Equivalent to axios responseType: 'arraybuffer'
+      json: true, // Automatically parse JSON response
       timeout: this.timeoutMs,
       returnFullResponse: false, // Return body directly
     };
 
     // Execute HTTP request using n8n helper
-    const response = (await this.n8nContext.helpers.httpRequest(httpOptions)) as Buffer;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const responseBody = await this.n8nContext.helpers.httpRequest(httpOptions);
 
     const durationMs = Date.now() - startTime;
 
-    // Parse response (response is a Buffer from n8n httpRequest with encoding: 'arraybuffer')
-    const responseData = this.parseResponse(response);
+    // Parse response (n8n helper already parsed JSON due to json: true)
+    const responseData = this.parseJSONResponse(responseBody);
 
     // Reshape outputs based on original input format
     const inputFormat = req.data.inputFormat;
@@ -168,9 +169,16 @@ export class ForecastClient {
 
     try {
       if (typeof responseData.point !== 'undefined' && responseData.point !== null) {
-        const pointData = responseData.point as number[][][];
+        const pointData = responseData.point as number[][] | number[][][];
+        // Convert 2D point (FlowState/TiRex) to 3D format for reshaper
+        // 2D: [batch, horizon] → 3D: [batch, horizon, 1]
+        const point3D: number[][][] = JSONSerializer.isPoint3D(pointData)
+          ? (pointData)
+          : (pointData).map((batch) =>
+              batch.map((val) => [val])
+            );
         // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-        reshapedPoint = ShapeReshaper.reshapePointForecast(pointData, inputFormat);
+        reshapedPoint = ShapeReshaper.reshapePointForecast(point3D, inputFormat);
       }
 
       if (typeof responseData.quantiles !== 'undefined' && responseData.quantiles !== null) {
@@ -225,72 +233,70 @@ export class ForecastClient {
   }
 
   /**
-   * Parse Arrow IPC response
-   * Matches Python SDK deserialization
+   * Parse JSON response from FAIM API
+   * Handles both successful and error responses
    */
-  private parseResponse(data: unknown): Record<string, unknown> {
+  private parseJSONResponse(data: unknown): Record<string, unknown> {
     try {
-      // Expect Arrow IPC stream (binary Uint8Array)
-      if (data instanceof Uint8Array) {
-        // Deserialize Arrow stream
-        const { arrays, metadata } = ArrowSerializer.deserialize(data);
+      // Data should already be parsed by n8n's json: true option
+      // but handle different response types
+      let responseObj: unknown;
 
-        // Transform Arrow arrays into forecast response format
-        const response: Record<string, unknown> = {
-          ...metadata, // Include all metadata (model_name, cost_amount, etc.)
-        };
-
-        // Map array outputs based on output_type
-        if (typeof arrays['point'] !== 'undefined' && arrays['point'] !== null) {
-          response.point = arrays['point'];
-        }
-        if (typeof arrays['quantiles'] !== 'undefined' && arrays['quantiles'] !== null) {
-          response.quantiles = arrays['quantiles'];
-        }
-        if (typeof arrays['samples'] !== 'undefined' && arrays['samples'] !== null) {
-          response.samples = arrays['samples'];
-        }
-
-        return response;
-      }
-
-      // Fallback: try JSON parsing
       if (typeof data === 'string') {
-        return JSON.parse(data) as Record<string, unknown>;
+        responseObj = JSON.parse(data);
+      } else if (typeof data === 'object' && data !== null) {
+        responseObj = data;
+      } else {
+        throw new Error(`Unexpected response type: ${typeof data}`);
       }
 
-      // Return as-is if already an object
-      if (typeof data === 'object' && data !== null) {
-        return data as Record<string, unknown>;
+      // Check for error response
+      if (JSONSerializer.isError(responseObj)) {
+        const errorResp = responseObj;
+        const detailStr = typeof errorResp.detail === 'string' && errorResp.detail ? ` - ${errorResp.detail}` : '';
+        throw new NetworkError(
+          `API Error (${errorResp.error_code}): ${errorResp.message}${detailStr}`
+        );
       }
 
-      throw new Error('Unable to parse response: unsupported data type');
+      // Verify it's a successful response
+      if (!JSONSerializer.isSuccess(responseObj)) {
+        throw new Error('Invalid API response format: missing status, outputs, or metadata');
+      }
+
+      const jsonResp = responseObj;
+
+      // Transform outputs, handling model-specific point forecast shapes
+      const response: Record<string, unknown> = {
+        model_name: jsonResp.metadata.model_name,
+        model_version: jsonResp.metadata.model_version,
+        token_count: jsonResp.metadata.token_count,
+        transaction_id: jsonResp.metadata.transaction_id,
+        cost_amount: jsonResp.metadata.cost_amount,
+        cost_currency: jsonResp.metadata.cost_currency,
+      };
+
+      // Handle point forecast (varies by model: 2D or 3D)
+      if (typeof jsonResp.outputs.point !== 'undefined' && jsonResp.outputs.point !== null) {
+        response.point = jsonResp.outputs.point;
+      }
+
+      // Handle quantiles (always 4D)
+      if (typeof jsonResp.outputs.quantiles !== 'undefined' && jsonResp.outputs.quantiles !== null) {
+        response.quantiles = jsonResp.outputs.quantiles;
+      }
+
+      // Handle samples (always 4D)
+      if (typeof jsonResp.outputs.samples !== 'undefined' && jsonResp.outputs.samples !== null) {
+        response.samples = jsonResp.outputs.samples;
+      }
+
+      return response;
     } catch (error) {
-      // Try to extract metadata from compressed Arrow response
-      if (data instanceof Uint8Array) {
-        try {
-          const decoder = new TextDecoder();
-          const fullText = decoder.decode(data);
-
-          // Try to find JSON metadata in the response
-          // Arrow IPC format includes schema metadata
-          const jsonMatch = fullText.match(/\{"[^}]*":[^}]*\}/);
-          if (jsonMatch !== null && jsonMatch.length > 0) {
-            const extractedMetadata = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-
-            // Return partial response with metadata and dummy forecast data
-            return {
-              ...extractedMetadata,
-              point: [[[0]]], // Placeholder - actual data is in compressed response
-              _compressionWarning: 'Response data is compressed. Apache Arrow JS v14.x does not support zstd decompression. Use Python SDK or request uncompressed response from backend.',
-            };
-          }
-        } catch {
-          // Continue to throw error below
-        }
+      if (error instanceof FaimError) {
+        throw error;
       }
 
-      // If we got here and have no data to return, throw the error
       throw new NetworkError(
         `Failed to parse API response: ${error instanceof Error ? error.message : String(error)}`
       );

@@ -8,7 +8,12 @@ export { FAIMForecast as FAIMForecastCredentials } from './nodes/FAIMForecast/FA
 export { ForecastClient, ClientConfig, ForecastResponse } from './api/forecastClient';
 export { RequestBuilder, ForecastRequest, BuiltRequest, ModelType, OutputType } from './api/requestBuilder';
 export { ShapeConverter, NormalizedData } from './data/shapeConverter';
-export { ArrowSerializer, ArrowData } from './arrow/serializer';
+export {
+  JSONSerializer,
+  JSONPayload,
+  JSONResponse,
+  JSONErrorResponse,
+} from './data/jsonSerializer';
 export {
   FaimError,
   ValidationError,

@@ -49,9 +49,7 @@
     "n8n-core": "^1.0.0",
     "n8n-workflow": "^1.0.0"
   },
-  "dependencies": {
-    "apache-arrow": "^14.0.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/jest": "^29.5.0",
     "@types/node": "^20.0.0",
