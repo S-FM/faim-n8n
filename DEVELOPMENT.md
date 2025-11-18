@@ -8,13 +8,12 @@ This document covers development, testing, and contribution guidelines for the F
 faim-n8n/
 ├── src/
 │   ├── api/                 # HTTP API client & request building
-│   │   ├── forecastClient.ts  # Main client with retry logic
-│   │   └── requestBuilder.ts  # Arrow request assembly
-│   ├── arrow/               # Apache Arrow serialization
-│   │   └── serializer.ts    # IPC format handling
+│   │   ├── forecastClient.ts  # Main client with retry logic & reshaping
+│   │   └── requestBuilder.ts  # JSON request assembly & validation
 │   ├── data/                # Data processing & validation
-│   │   ├── shapeConverter.ts  # 1D/2D/3D normalization
-│   │   └── validator.ts     # Input validation
+│   │   ├── shapeConverter.ts   # 1D/2D/3D normalization
+│   │   ├── shapeReshaper.ts    # Output reshaping to input format
+│   │   └── jsonSerializer.ts   # JSON serialization & type checks
 │   ├── errors/              # Error handling
 │   │   ├── customErrors.ts  # Error classes
 │   │   └── errorHandler.ts  # Error mapping & messages
@@ -22,14 +21,14 @@ faim-n8n/
 │   │   └── FAIMForecast/
 │   │       ├── FAIMForecast.node.ts
 │   │       ├── FAIMForecast.credentials.ts
-│   │       └── faim.svg
+│   │       └── faim.png
 │   └── index.ts             # Public exports
 ├── tests/                   # Test files
-│   ├── unit/                # Unit tests by module
-│   ├── integration/         # Integration tests
-│   ├── fixtures/            # Mock data & responses
-│   └── setup.ts             # Test configuration
-├── examples/                # Example workflows
+│   ├── shapeConverter.test.ts    # Data normalization tests
+│   ├── shapeReshaper.test.ts     # Output reshaping tests
+│   ├── requestBuilder.test.ts    # Request assembly tests
+│   └── setup.ts                  # Test configuration
+├── examples/                # Example n8n workflows
 ├── .github/workflows/       # CI/CD pipelines
 ├── README.md                # User documentation
 ├── EXAMPLES.md              # Workflow examples
@@ -79,15 +78,13 @@ n8n Input Data
     ↓
 ShapeConverter (normalize 1D/2D/3D)
     ↓
-RequestBuilder (validate & prepare)
-    ↓
-ArrowSerializer (IPC format)
+RequestBuilder (validate & prepare JSON)
     ↓
 ForecastClient (HTTP + retry logic)
     ↓
-API Response (Arrow IPC)
+API Response (JSON)
     ↓
-ArrowSerializer (deserialize)
+ShapeReshaper (reshape to input format)
     ↓
 n8n Output JSON
 ```
@@ -155,29 +152,31 @@ Current coverage status tracked in CI/CD.
 - **Validation**: Size limits, numeric values, consistent dimensions
 
 ### RequestBuilder
-- **Purpose**: Assemble Arrow-formatted API requests
+- **Purpose**: Assemble JSON API requests and validate parameters
 - **Features**:
   - Model-specific parameter handling
   - Metadata schema construction
-  - HTTP header generation
+  - HTTP header generation (Authorization, Content-Type)
   - Input validation before API call
+  - Request URL construction
 
 ### ForecastClient
-- **Purpose**: Execute forecasts with automatic retry
+- **Purpose**: Execute forecasts with automatic retry and output reshaping
 - **Features**:
   - Bearer token authentication
-  - Exponential backoff retry
-  - Timeout management
-  - Error mapping
-  - Response deserialization
+  - Exponential backoff retry (2s, 4s, 8s + jitter)
+  - Timeout management (default 30s)
+  - Error mapping & classification
+  - Response deserialization (JSON)
+  - Output reshaping to original input format
 
-### ArrowSerializer
-- **Purpose**: Handle Apache Arrow IPC serialization
+### ShapeReshaper
+- **Purpose**: Transform API outputs back to original input dimensions
 - **Features**:
-  - Serialize arrays + metadata to IPC stream
-  - Deserialize IPC stream back to arrays
-  - Zstd compression detection (placeholder)
-  - Zero-copy operations where possible
+  - Reshape point forecasts to 1D/2D format
+  - Reshape quantiles to 1D/2D/3D format
+  - Reshape samples to 1D/2D/3D format
+  - Handle univariate outputs (features=1)
 
 ## Adding New Features
 
@@ -200,7 +199,7 @@ Current coverage status tracked in CI/CD.
 ## Dependencies
 
 ### Production
-- **apache-arrow** (v14): Arrow IPC serialization
+- **None** (zero external dependencies for n8n Cloud compatibility)
 
 ### Built-in n8n Integration
 - **n8n's `this.helpers.httpRequest`**: HTTP client (built-in, no dependency)
@@ -240,7 +239,7 @@ Requires npm account and authentication.
 
 ### Memory
 - Input size limited to 50M elements (configurable in ShapeConverter)
-- Arrow serialization uses streaming where possible
+- JSON serialization kept minimal - no binary overhead
 - Batch processing reduces per-request overhead
 
 ### Latency
@@ -252,6 +251,14 @@ Requires npm account and authentication.
 - Batch multiple requests when possible
 - Use smaller horizons if not needed
 - Point forecasts cheaper than quantiles/samples
+
+## n8n Cloud Compatibility
+
+This node is designed for n8n Cloud compliance:
+- **Zero external dependencies**: Uses only n8n built-in helpers
+- **No restricted globals**: No `setTimeout`, `setInterval`, or `console.log`
+- **JSON-only serialization**: No binary formats required
+- **n8n helpers only**: Uses `this.helpers.httpRequest` for HTTP calls
 
 ## Troubleshooting Development
 
