@@ -1,6 +1,6 @@
 {
   "name": "@faim-group/n8n-nodes-faim",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "n8n node for FAIM time-series forecast API",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
