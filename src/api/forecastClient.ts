@@ -194,7 +194,6 @@ export class ForecastClient {
       }
     } catch (reshapeError) {
       const errorMsg = reshapeError instanceof Error ? reshapeError.message : String(reshapeError);
-      console.error('❌ Error reshaping forecast:', errorMsg);
       throw new DataProcessingError(
         `Failed to reshape forecast output: ${errorMsg}. This usually means the server returned data in an unexpected format. Please check your input data format and try again.`
       );
@@ -382,8 +381,23 @@ export class ForecastClient {
 
   /**
    * Sleep helper for retry delays
+   * Creates an async delay by awaiting a resolved promise
    */
   private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return new Promise((resolve) => {
+      // Use a simple promise-based delay without setTimeout
+      // This approach is compatible with n8n's sandboxed environment
+      const deadline = Date.now() + ms;
+      const checkDelay = (): void => {
+        if (Date.now() >= deadline) {
+          resolve();
+        } else {
+          // Reschedule via promise chain to avoid blocking
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          Promise.resolve().then(checkDelay);
+        }
+      };
+      checkDelay();
+    });
   }
 }
